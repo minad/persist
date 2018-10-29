@@ -16,7 +16,7 @@ build-type:             Simple
 cabal-version:          >= 1.10
 synopsis:               Minimal serialization library with focus on performance
 homepage:               https://github.com/minad/persist
-tested-with:            GHC == 8.2.1, GHC == 8.4.3, GHC == 8.6.1
+tested-with:            GHC == 8.4.3, GHC == 8.6.1
 
 description:
   A binary serialization library with focus on performance similar to store and cereal
