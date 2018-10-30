@@ -1,5 +1,4 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
@@ -804,7 +803,7 @@ instance Monad Get where
     unGet (f x) e p'
   {-# INLINE (>>=) #-}
 
-  fail msg = Fail.fail msg
+  fail = Fail.fail
   {-# INLINE fail #-}
 
 instance Fail.MonadFail Get where
@@ -817,7 +816,7 @@ runGet m s = unsafePerformIO $ catch run handler
   where run = withForeignPtr buf $ \p -> do
           let env = GetEnv { geBuf = buf, geBegin = p, geEnd = p `plusPtr` (pos + len) }
           _ :!: r <- unGet m env (p `plusPtr` pos)
-          pure $! Right r
+          pure $ Right r
         handler (e :: IOException) = pure $ Left $ displayException e
         (B.PS buf pos len) = s
 {-# NOINLINE runGet #-}
@@ -946,7 +945,7 @@ chunksLength = foldr (\c s -> s + chkEnd c `minusPtr` chkBegin c) 0
 {-# INLINE chunksLength #-}
 
 catChunks :: [Chunk] -> IO ByteString
-catChunks chks = B.create (chunksLength chks) $ \p -> do
+catChunks chks = B.create (chunksLength chks) $ \p ->
   void $ foldlM (\q c -> do
                     let n = chkEnd c `minusPtr` chkBegin c
                     B.memcpy q (chkBegin c) n
