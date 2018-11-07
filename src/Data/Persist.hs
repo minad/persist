@@ -74,11 +74,10 @@ import Data.Sequence (Seq)
 import Data.Set (Set)
 import Data.Text (Text)
 import Data.Word
-import Foreign (ForeignPtr, Ptr, Storable(..), plusPtr, minusPtr,
-                withForeignPtr, mallocBytes, free)
+import Foreign (ForeignPtr, Ptr, Storable(..), plusPtr, minusPtr, castPtr,
+                withForeignPtr, mallocBytes, free, allocaBytes)
 import GHC.Base (unsafeChr, ord)
 import GHC.Exts (IsList(..))
-import GHC.Float (castWord32ToFloat, castWord64ToDouble, castDoubleToWord64, castFloatToWord32)
 import GHC.Generics
 import GHC.Real (Ratio(..))
 import GHC.TypeLits
@@ -114,10 +113,10 @@ getHE = getLE
 putHE = putLE
 #endif
 
-newtype BigEndian a = BigEndian { unBigEndian :: a }
+newtype BigEndian a = BigEndian { unBE :: a }
   deriving (Show, Eq, Ord, Functor, Foldable, Traversable, Generic)
 
-newtype LittleEndian a = LittleEndian { unLittleEndian :: a }
+newtype LittleEndian a = LittleEndian { unLE :: a }
   deriving (Show, Eq, Ord, Functor, Foldable, Traversable, Generic)
 
 class Persist t where
@@ -150,11 +149,11 @@ putBE = put . BigEndian
 {-# INLINE putBE #-}
 
 getLE :: Persist (LittleEndian a) => Get a
-getLE = unLittleEndian <$> get
+getLE = unLE <$> get
 {-# INLINE getLE #-}
 
 getBE :: Persist (BigEndian a) => Get a
-getBE = unBigEndian <$> get
+getBE = unBE <$> get
 {-# INLINE getBE #-}
 
 unsafePutByte :: Integral a => a -> Put ()
@@ -168,6 +167,20 @@ unsafeGetByte = Get $ \_ p -> do
   x <- peek p
   pure $! p `plusPtr` 1 :!: fromIntegral x
 {-# INLINE unsafeGetByte #-}
+
+reinterpretCast :: (Storable a, Storable b) => Ptr p -> a -> IO b
+reinterpretCast p x = do
+  poke (castPtr p) x
+  peek (castPtr p)
+{-# INLINE reinterpretCast #-}
+
+reinterpretCastPut :: (Storable a, Storable b) => a -> Put b
+reinterpretCastPut x = Put $ \e p -> (p :!:) <$!> reinterpretCast (peTmp e) x
+{-# INLINE reinterpretCastPut #-}
+
+reinterpretCastGet :: (Storable a, Storable b) => a -> Get b
+reinterpretCastGet x = Get $ \e p -> (p :!:) <$!> reinterpretCast (geTmp e) x
+{-# INLINE reinterpretCastGet #-}
 
 -- The () type need never be written to disk: values of singleton type
 -- can be reconstructed from the type alone
@@ -191,7 +204,7 @@ instance Persist Word8 where
 instance Persist (LittleEndian Word16) where
   put x = do
     grow 2
-    let y = unLittleEndian x
+    let y = unLE x
     unsafePutByte $ y .&. 0xFF
     unsafePutByte $ y `unsafeShiftR` 8
   {-# INLINE put #-}
@@ -208,7 +221,7 @@ instance Persist (LittleEndian Word16) where
 instance Persist (BigEndian Word16) where
   put x = do
     grow 2
-    let y = unBigEndian x
+    let y = unBE x
     unsafePutByte $ y `unsafeShiftR` 8
     unsafePutByte $ y .&. 0xFF
   {-# INLINE put #-}
@@ -231,7 +244,7 @@ instance Persist Word16 where
 instance Persist (LittleEndian Word32) where
   put x = do
     grow 4
-    let y = unLittleEndian x
+    let y = unLE x
     unsafePutByte $ y .&. 0xFF
     unsafePutByte $ y `unsafeShiftR` 8 .&. 0xFF
     unsafePutByte $ y `unsafeShiftR` 16 .&. 0xFF
@@ -254,7 +267,7 @@ instance Persist (LittleEndian Word32) where
 instance Persist (BigEndian Word32) where
   put x = do
     grow 4
-    let y = unBigEndian x
+    let y = unBE x
     unsafePutByte $ y `unsafeShiftR` 24
     unsafePutByte $ y `unsafeShiftR` 16 .&. 0xFF
     unsafePutByte $ y `unsafeShiftR` 8 .&. 0xFF
@@ -283,7 +296,7 @@ instance Persist Word32 where
 instance Persist (LittleEndian Word64) where
   put x = do
     grow 8
-    let y = unLittleEndian x
+    let y = unLE x
     unsafePutByte $ y .&. 0xFF
     unsafePutByte $ y `unsafeShiftR` 8 .&. 0xFF
     unsafePutByte $ y `unsafeShiftR` 16 .&. 0xFF
@@ -318,7 +331,7 @@ instance Persist (LittleEndian Word64) where
 instance Persist (BigEndian Word64) where
   put x = do
     grow 8
-    let y = unBigEndian x
+    let y = unBE x
     unsafePutByte $ y `unsafeShiftR` 56
     unsafePutByte $ y `unsafeShiftR` 48 .&. 0xFF
     unsafePutByte $ y `unsafeShiftR` 40 .&. 0xFF
@@ -417,15 +430,15 @@ instance Persist Int64 where
   {-# INLINE get #-}
 
 instance Persist (LittleEndian Double) where
-  put = put . fmap castDoubleToWord64
+  put x = reinterpretCastPut (unLE x) >>= putLE @Word64
   {-# INLINE put #-}
-  get = fmap castWord64ToDouble <$> get
+  get = getLE @Word64 >>= fmap LittleEndian . reinterpretCastGet
   {-# INLINE get #-}
 
 instance Persist (BigEndian Double) where
-  put = put . fmap castDoubleToWord64
+  put x = reinterpretCastPut (unBE x) >>= putBE @Word64
   {-# INLINE put #-}
-  get = fmap castWord64ToDouble <$> get
+  get = getBE @Word64 >>= fmap BigEndian . reinterpretCastGet
   {-# INLINE get #-}
 
 instance Persist Double where
@@ -435,15 +448,15 @@ instance Persist Double where
   {-# INLINE get #-}
 
 instance Persist (LittleEndian Float) where
-  put = put . fmap castFloatToWord32
+  put x = reinterpretCastPut (unLE x) >>= putLE @Word32
   {-# INLINE put #-}
-  get = fmap castWord32ToFloat <$> get
+  get = getLE @Word32 >>= fmap LittleEndian . reinterpretCastGet
   {-# INLINE get #-}
 
 instance Persist (BigEndian Float) where
-  put = put . fmap castFloatToWord32
+  put x = reinterpretCastPut (unBE x) >>= putBE @Word32
   {-# INLINE put #-}
-  get = fmap castWord32ToFloat <$> get
+  get = getBE @Word32 >>= fmap BigEndian . reinterpretCastGet
   {-# INLINE get #-}
 
 instance Persist Float where
@@ -770,6 +783,7 @@ data GetEnv = GetEnv
   { geBuf   :: !(ForeignPtr Word8)
   , geBegin :: !(Ptr Word8)
   , geEnd   :: !(Ptr Word8)
+  , geTmp   :: !(Ptr Word8)
   }
 
 newtype Get a = Get
@@ -813,8 +827,8 @@ instance Fail.MonadFail Get where
 -- | Run the Get monad applies a 'get'-based parser on the input ByteString
 runGet :: Get a -> ByteString -> Either String a
 runGet m s = unsafePerformIO $ catch run handler
-  where run = withForeignPtr buf $ \p -> do
-          let env = GetEnv { geBuf = buf, geBegin = p, geEnd = p `plusPtr` (pos + len) }
+  where run = withForeignPtr buf $ \p -> allocaBytes 8 $ \t -> do
+          let env = GetEnv { geBuf = buf, geBegin = p, geEnd = p `plusPtr` (pos + len), geTmp = t }
           _ :!: r <- unGet m env (p `plusPtr` pos)
           pure $ Right r
         handler (e :: IOException) = pure $ Left $ displayException e
@@ -872,6 +886,7 @@ data Chunk = Chunk
 data PutEnv = PutEnv
   { peChks :: !(IORef (NonEmpty Chunk))
   , peEnd  :: !(IORef (Ptr Word8))
+  , peTmp  :: !(Ptr Word8)
   }
 
 newtype Put a = Put
@@ -958,7 +973,8 @@ evalPut p = unsafePerformIO $ do
   k <- newChunk 0
   chks <- newIORef (k:|[])
   end <- newIORef (chkEnd k)
-  p' :!: r <- unPut p (PutEnv chks end) (chkBegin k)
+  p' :!: r <- allocaBytes 8 $ \t ->
+    unPut p PutEnv { peChks = chks, peEnd = end, peTmp = t } (chkBegin k)
   cs <- readIORef chks
   s <- case cs of
     (x:|xs) -> catChunks $ x { chkEnd = p' } : xs
