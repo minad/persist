@@ -12,7 +12,7 @@ Serialization generates ByteStrings directly instead of relying on the ByteStrin
 ## Comparison with other libraries
 
 * flat - bit packing (!), fast, longer compile times
-* store - fast serialization, larger library, many dependencies
+* store - faster serialization, larger library, many dependencies
 * cereal - similar to persist, slower
 * binary - lazy and slower than persist
 
