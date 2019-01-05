@@ -572,7 +572,7 @@ instance Persist Char where
                 z <- xor 0x80 <$> byte
                 pure $ z .|. shiftL6 (y .|. shiftL6
                                        (x .|. shiftL6 (xor 0xf0 w)))
-    if r < 0x10FFFF then
+    if r <= 0x10FFFF then
       pure $ unsafeChr r
     else
       fail "Invalid character"
