@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
@@ -113,6 +114,226 @@ getHE = getLE
 putHE = putLE
 #endif
 
+poke16LE :: Ptr Word8 -> Word16 -> IO ()
+poke32LE :: Ptr Word8 -> Word32 -> IO ()
+poke64LE :: Ptr Word8 -> Word64 -> IO ()
+{-# INLINE poke16LE #-}
+{-# INLINE poke32LE #-}
+{-# INLINE poke64LE #-}
+poke16BE :: Ptr Word8 -> Word16 -> IO ()
+poke32BE :: Ptr Word8 -> Word32 -> IO ()
+poke64BE :: Ptr Word8 -> Word64 -> IO ()
+{-# INLINE poke16BE #-}
+{-# INLINE poke32BE #-}
+{-# INLINE poke64BE #-}
+
+peek16LE :: Ptr Word8 -> IO Word16
+peek32LE :: Ptr Word8 -> IO Word32
+peek64LE :: Ptr Word8 -> IO Word64
+{-# INLINE peek16LE #-}
+{-# INLINE peek32LE #-}
+{-# INLINE peek64LE #-}
+
+peek16BE :: Ptr Word8 -> IO Word16
+peek32BE :: Ptr Word8 -> IO Word32
+peek64BE :: Ptr Word8 -> IO Word64
+{-# INLINE peek16BE #-}
+{-# INLINE peek32BE #-}
+{-# INLINE peek64BE #-}
+
+#if defined(FORCE_ALIGNED_MEMORY) || !defined(UNALIGNED_MEMORY)
+pokeByte :: (Integral a) => Ptr Word8 -> a -> IO ()
+pokeByte p x = poke p (fromIntegral x)
+{-# INLINE pokeByte #-}
+
+peekByte :: (Integral a) => Ptr Word8 -> IO a
+peekByte p = do
+  !b <- peek p
+  return $! fromIntegral b
+{-# INLINE peekByte #-}
+
+poke16LE p y = do
+  pokeByte p $ y
+  pokeByte (p `plusPtr` 1) $ y `unsafeShiftR` 8
+
+poke16BE p y = do
+  pokeByte p $ y `unsafeShiftR` 8
+  pokeByte (p `plusPtr` 1) $ y
+
+poke32LE p y = do
+  pokeByte p $ y
+  pokeByte (p `plusPtr` 1) $ y `unsafeShiftR` 8
+  pokeByte (p `plusPtr` 2) $ y `unsafeShiftR` 16
+  pokeByte (p `plusPtr` 3) $ y `unsafeShiftR` 24
+
+poke32BE p y = do
+  pokeByte p $ y `unsafeShiftR` 24
+  pokeByte (p `plusPtr` 1) $ y `unsafeShiftR` 16
+  pokeByte (p `plusPtr` 2) $ y `unsafeShiftR` 8
+  pokeByte (p `plusPtr` 3) $ y
+
+poke64LE p y = do
+  pokeByte p $ y
+  pokeByte (p `plusPtr` 1) $ y `unsafeShiftR` 8
+  pokeByte (p `plusPtr` 2) $ y `unsafeShiftR` 16
+  pokeByte (p `plusPtr` 3) $ y `unsafeShiftR` 24
+  pokeByte (p `plusPtr` 4) $ y `unsafeShiftR` 32
+  pokeByte (p `plusPtr` 5) $ y `unsafeShiftR` 40
+  pokeByte (p `plusPtr` 6) $ y `unsafeShiftR` 48
+  pokeByte (p `plusPtr` 7) $ y `unsafeShiftR` 56
+
+poke64BE p y = do
+  pokeByte p $ y `unsafeShiftR` 56
+  pokeByte (p `plusPtr` 1) $ y `unsafeShiftR` 48
+  pokeByte (p `plusPtr` 2) $ y `unsafeShiftR` 40
+  pokeByte (p `plusPtr` 3) $ y `unsafeShiftR` 32
+  pokeByte (p `plusPtr` 4) $ y `unsafeShiftR` 24
+  pokeByte (p `plusPtr` 5) $ y `unsafeShiftR` 16
+  pokeByte (p `plusPtr` 6) $ y `unsafeShiftR` 8
+  pokeByte (p `plusPtr` 7) $ y
+
+peek16LE p = do
+  !x0 <- peekByte @Word16 p
+  !x1 <- peekByte @Word16 (p `plusPtr` 1)
+  return $ x1 `unsafeShiftL` 8
+    .|. x0
+
+peek16BE p = do
+  !x0 <- peekByte @Word16 p
+  !x1 <- peekByte @Word16 (p `plusPtr` 1)
+  return $ x0 `unsafeShiftL` 8
+    .|. x1
+
+peek32LE p = do
+  !x0 <- peekByte @Word32 p
+  !x1 <- peekByte @Word32 (p `plusPtr` 1)
+  !x2 <- peekByte @Word32 (p `plusPtr` 2)
+  !x3 <- peekByte @Word32 (p `plusPtr` 3)
+  return $ x3 `unsafeShiftL` 24
+    .|. x2 `unsafeShiftL` 16
+    .|. x1 `unsafeShiftL` 8
+    .|. x0
+
+peek32BE p = do
+  !x0 <- peekByte @Word32 p
+  !x1 <- peekByte @Word32 (p `plusPtr` 1)
+  !x2 <- peekByte @Word32 (p `plusPtr` 2)
+  !x3 <- peekByte @Word32 (p `plusPtr` 3)
+  return $ x0 `unsafeShiftL` 24
+    .|. x1 `unsafeShiftL` 16
+    .|. x2 `unsafeShiftL` 8
+    .|. x3
+
+peek64LE p = do
+  !x0 <- peekByte @Word64 p
+  !x1 <- peekByte @Word64 (p `plusPtr` 1)
+  !x2 <- peekByte @Word64 (p `plusPtr` 2)
+  !x3 <- peekByte @Word64 (p `plusPtr` 3)
+  !x4 <- peekByte @Word64 (p `plusPtr` 4)
+  !x5 <- peekByte @Word64 (p `plusPtr` 5)
+  !x6 <- peekByte @Word64 (p `plusPtr` 6)
+  !x7 <- peekByte @Word64 (p `plusPtr` 7)
+  return $ x7 `unsafeShiftL` 56
+    .|. x6 `unsafeShiftL` 48
+    .|. x5 `unsafeShiftL` 40
+    .|. x4 `unsafeShiftL` 32
+    .|. x3 `unsafeShiftL` 24
+    .|. x2 `unsafeShiftL` 16
+    .|. x1 `unsafeShiftL` 8
+    .|. x0
+
+peek64BE p = do
+  !x0 <- peekByte @Word64 p
+  !x1 <- peekByte @Word64 (p `plusPtr` 1)
+  !x2 <- peekByte @Word64 (p `plusPtr` 2)
+  !x3 <- peekByte @Word64 (p `plusPtr` 3)
+  !x4 <- peekByte @Word64 (p `plusPtr` 4)
+  !x5 <- peekByte @Word64 (p `plusPtr` 5)
+  !x6 <- peekByte @Word64 (p `plusPtr` 6)
+  !x7 <- peekByte @Word64 (p `plusPtr` 7)
+  return $ x0 `unsafeShiftL` 56
+    .|. x1 `unsafeShiftL` 48
+    .|. x2 `unsafeShiftL` 40
+    .|. x3 `unsafeShiftL` 32
+    .|. x4 `unsafeShiftL` 24
+    .|. x5 `unsafeShiftL` 16
+    .|. x6 `unsafeShiftL` 8
+    .|. x7
+
+#else
+fromLE16 :: Word16 -> Word16
+fromLE32 :: Word32 -> Word32
+fromLE64 :: Word64 -> Word64
+{-# INLINE fromLE16 #-}
+{-# INLINE fromLE32 #-}
+{-# INLINE fromLE64 #-}
+
+fromBE16 :: Word16 -> Word16
+fromBE32 :: Word32 -> Word32
+fromBE64 :: Word64 -> Word64
+{-# INLINE fromBE16 #-}
+{-# INLINE fromBE32 #-}
+{-# INLINE fromBE64 #-}
+
+toLE16 :: Word16 -> Word16
+toLE32 :: Word32 -> Word32
+toLE64 :: Word64 -> Word64
+{-# INLINE toLE16 #-}
+{-# INLINE toLE32 #-}
+{-# INLINE toLE64 #-}
+
+toBE16 :: Word16 -> Word16
+toBE32 :: Word32 -> Word32
+toBE64 :: Word64 -> Word64
+{-# INLINE toBE16 #-}
+{-# INLINE toBE32 #-}
+{-# INLINE toBE64 #-}
+
+# ifdef WORDS_BIGENDIAN
+fromBE16 = id
+fromBE32 = id
+fromBE64 = id
+toBE16 = id
+toBE32 = id
+toBE64 = id
+fromLE16 = byteSwap16
+fromLE32 = byteSwap32
+fromLE64 = byteSwap64
+toLE16 = byteSwap16
+toLE32 = byteSwap32
+toLE64 = byteSwap64
+# else
+fromLE16 = id
+fromLE32 = id
+fromLE64 = id
+toLE16 = id
+toLE32 = id
+toLE64 = id
+fromBE16 = byteSwap16
+fromBE32 = byteSwap32
+fromBE64 = byteSwap64
+toBE16 = byteSwap16
+toBE32 = byteSwap32
+toBE64 = byteSwap64
+# endif
+
+poke16LE p = poke (castPtr @_ @Word16 p) . toLE16
+poke32LE p = poke (castPtr @_ @Word32 p) . toLE32
+poke64LE p = poke (castPtr @_ @Word64 p) . toLE64
+
+poke16BE p = poke (castPtr @_ @Word16 p) . toBE16
+poke32BE p = poke (castPtr @_ @Word32 p) . toBE32
+poke64BE p = poke (castPtr @_ @Word64 p) . toBE64
+
+peek16LE p = fromLE16 <$!> peek (castPtr @_ @Word16 p)
+peek32LE p = fromLE32 <$!> peek (castPtr @_ @Word32 p)
+peek64LE p = fromLE64 <$!> peek (castPtr @_ @Word64 p)
+
+peek16BE p = fromBE16 <$!> peek (castPtr @_ @Word16 p)
+peek32BE p = fromBE32 <$!> peek (castPtr @_ @Word32 p)
+peek64BE p = fromBE64 <$!> peek (castPtr @_ @Word64 p)
+#endif
+
 newtype BigEndian a = BigEndian { unBE :: a }
   deriving (Show, Eq, Ord, Functor, Foldable, Traversable, Generic)
 
@@ -162,11 +383,83 @@ unsafePutByte x = Put $ \_ p -> do
   pure $! p `plusPtr` 1 :!: ()
 {-# INLINE unsafePutByte #-}
 
+unsafePut16LE :: Integral a => a -> Put ()
+unsafePut16LE x = Put $ \_ p -> do
+  poke16LE p $ fromIntegral x
+  pure $! p `plusPtr` 2 :!: ()
+{-# INLINE unsafePut16LE #-}
+
+unsafePut32LE :: Integral a => a -> Put ()
+unsafePut32LE x = Put $ \_ p -> do
+  poke32LE p $ fromIntegral x
+  pure $! p `plusPtr` 4 :!: ()
+{-# INLINE unsafePut32LE #-}
+
+unsafePut64LE :: Integral a => a -> Put ()
+unsafePut64LE x = Put $ \_ p -> do
+  poke64LE p $ fromIntegral x
+  pure $! p `plusPtr` 8 :!: ()
+{-# INLINE unsafePut64LE #-}
+
+unsafePut16BE :: Integral a => a -> Put ()
+unsafePut16BE x = Put $ \_ p -> do
+  poke16BE p $ fromIntegral x
+  pure $! p `plusPtr` 2 :!: ()
+{-# INLINE unsafePut16BE #-}
+
+unsafePut32BE :: Integral a => a -> Put ()
+unsafePut32BE x = Put $ \_ p -> do
+  poke32BE p $ fromIntegral x
+  pure $! p `plusPtr` 4 :!: ()
+{-# INLINE unsafePut32BE #-}
+
+unsafePut64BE :: Integral a => a -> Put ()
+unsafePut64BE x = Put $ \_ p -> do
+  poke64BE p $ fromIntegral x
+  pure $! p `plusPtr` 8 :!: ()
+{-# INLINE unsafePut64BE #-}
+
 unsafeGetByte :: Num a => Get a
 unsafeGetByte = Get $ \_ p -> do
   x <- peek p
   pure $! p `plusPtr` 1 :!: fromIntegral x
 {-# INLINE unsafeGetByte #-}
+
+unsafeGet16LE :: Num a => Get a
+unsafeGet16LE = Get $ \_ p -> do
+  x <- peek16LE p
+  pure $! p `plusPtr` 2 :!: fromIntegral x
+{-# INLINE unsafeGet16LE #-}
+
+unsafeGet32LE :: Num a => Get a
+unsafeGet32LE = Get $ \_ p -> do
+  x <- peek32LE p
+  pure $! p `plusPtr` 4 :!: fromIntegral x
+{-# INLINE unsafeGet32LE #-}
+
+unsafeGet64LE :: Num a => Get a
+unsafeGet64LE = Get $ \_ p -> do
+  x <- peek64LE p
+  pure $! p `plusPtr` 8 :!: fromIntegral x
+{-# INLINE unsafeGet64LE #-}
+
+unsafeGet16BE :: Num a => Get a
+unsafeGet16BE = Get $ \_ p -> do
+  x <- peek16BE p
+  pure $! p `plusPtr` 2 :!: fromIntegral x
+{-# INLINE unsafeGet16BE #-}
+
+unsafeGet32BE :: Num a => Get a
+unsafeGet32BE = Get $ \_ p -> do
+  x <- peek32BE p
+  pure $! p `plusPtr` 4 :!: fromIntegral x
+{-# INLINE unsafeGet32BE #-}
+
+unsafeGet64BE :: Num a => Get a
+unsafeGet64BE = Get $ \_ p -> do
+  x <- peek64BE p
+  pure $! p `plusPtr` 8 :!: fromIntegral x
+{-# INLINE unsafeGet64BE #-}
 
 reinterpretCast :: (Storable a, Storable b) => Ptr p -> a -> IO b
 reinterpretCast p x = do
@@ -204,35 +497,23 @@ instance Persist Word8 where
 instance Persist (LittleEndian Word16) where
   put x = do
     grow 2
-    let y = unLE x
-    unsafePutByte $ y .&. 0xFF
-    unsafePutByte $ y `unsafeShiftR` 8
+    unsafePut16LE $ unLE x
   {-# INLINE put #-}
 
   get = do
     ensure 2
-    x0 <- unsafeGetByte
-    x1 <- unsafeGetByte
-    pure $ LittleEndian $
-      x1 `unsafeShiftL` 8
-      .|. x0
+    LittleEndian <$> unsafeGet16LE
   {-# INLINE get #-}
 
 instance Persist (BigEndian Word16) where
   put x = do
     grow 2
-    let y = unBE x
-    unsafePutByte $ y `unsafeShiftR` 8
-    unsafePutByte $ y .&. 0xFF
+    unsafePut16BE $ unBE x
   {-# INLINE put #-}
 
   get = do
     ensure 2
-    x1 <- unsafeGetByte
-    x0 <- unsafeGetByte
-    pure $ BigEndian $
-      x1 `unsafeShiftL` 8
-      .|. x0
+    BigEndian <$> unsafeGet16BE
   {-# INLINE get #-}
 
 instance Persist Word16 where
@@ -244,47 +525,23 @@ instance Persist Word16 where
 instance Persist (LittleEndian Word32) where
   put x = do
     grow 4
-    let y = unLE x
-    unsafePutByte $ y .&. 0xFF
-    unsafePutByte $ y `unsafeShiftR` 8 .&. 0xFF
-    unsafePutByte $ y `unsafeShiftR` 16 .&. 0xFF
-    unsafePutByte $ y `unsafeShiftR` 24
+    unsafePut32LE $ unLE x
   {-# INLINE put #-}
 
   get = do
     ensure 4
-    x0 <- unsafeGetByte
-    x1 <- unsafeGetByte
-    x2 <- unsafeGetByte
-    x3 <- unsafeGetByte
-    pure $ LittleEndian $
-      x3 `unsafeShiftL` 24
-      .|. x2 `unsafeShiftL` 16
-      .|. x1 `unsafeShiftL` 8
-      .|. x0
+    LittleEndian <$> unsafeGet32LE
   {-# INLINE get #-}
 
 instance Persist (BigEndian Word32) where
   put x = do
     grow 4
-    let y = unBE x
-    unsafePutByte $ y `unsafeShiftR` 24
-    unsafePutByte $ y `unsafeShiftR` 16 .&. 0xFF
-    unsafePutByte $ y `unsafeShiftR` 8 .&. 0xFF
-    unsafePutByte $ y .&. 0xFF
+    unsafePut32BE $ unBE x
   {-# INLINE put #-}
 
   get = do
     ensure 4
-    x3 <- unsafeGetByte
-    x2 <- unsafeGetByte
-    x1 <- unsafeGetByte
-    x0 <- unsafeGetByte
-    pure $ BigEndian $
-      x3 `unsafeShiftL` 24
-      .|. x2 `unsafeShiftL` 16
-      .|. x1 `unsafeShiftL` 8
-      .|. x0
+    BigEndian <$> unsafeGet32BE
   {-# INLINE get #-}
 
 instance Persist Word32 where
@@ -296,71 +553,23 @@ instance Persist Word32 where
 instance Persist (LittleEndian Word64) where
   put x = do
     grow 8
-    let y = unLE x
-    unsafePutByte $ y .&. 0xFF
-    unsafePutByte $ y `unsafeShiftR` 8 .&. 0xFF
-    unsafePutByte $ y `unsafeShiftR` 16 .&. 0xFF
-    unsafePutByte $ y `unsafeShiftR` 24 .&. 0xFF
-    unsafePutByte $ y `unsafeShiftR` 32 .&. 0xFF
-    unsafePutByte $ y `unsafeShiftR` 40 .&. 0xFF
-    unsafePutByte $ y `unsafeShiftR` 48 .&. 0xFF
-    unsafePutByte $ y `unsafeShiftR` 56
+    unsafePut64LE $ unLE x
   {-# INLINE put #-}
 
   get = do
     ensure 8
-    x0 <- unsafeGetByte
-    x1 <- unsafeGetByte
-    x2 <- unsafeGetByte
-    x3 <- unsafeGetByte
-    x4 <- unsafeGetByte
-    x5 <- unsafeGetByte
-    x6 <- unsafeGetByte
-    x7 <- unsafeGetByte
-    pure $ LittleEndian $
-      x7 `unsafeShiftL` 56
-      .|. x6 `unsafeShiftL` 48
-      .|. x5 `unsafeShiftL` 40
-      .|. x4 `unsafeShiftL` 32
-      .|. x3 `unsafeShiftL` 24
-      .|. x2 `unsafeShiftL` 16
-      .|. x1 `unsafeShiftL` 8
-      .|. x0
+    LittleEndian <$> unsafeGet64LE
   {-# INLINE get #-}
 
 instance Persist (BigEndian Word64) where
   put x = do
     grow 8
-    let y = unBE x
-    unsafePutByte $ y `unsafeShiftR` 56
-    unsafePutByte $ y `unsafeShiftR` 48 .&. 0xFF
-    unsafePutByte $ y `unsafeShiftR` 40 .&. 0xFF
-    unsafePutByte $ y `unsafeShiftR` 32 .&. 0xFF
-    unsafePutByte $ y `unsafeShiftR` 24 .&. 0xFF
-    unsafePutByte $ y `unsafeShiftR` 16 .&. 0xFF
-    unsafePutByte $ y `unsafeShiftR` 8 .&. 0xFF
-    unsafePutByte $ y .&. 0xFF
+    unsafePut64BE $ unBE x
   {-# INLINE put #-}
 
   get = do
     ensure 8
-    x7 <- unsafeGetByte
-    x6 <- unsafeGetByte
-    x5 <- unsafeGetByte
-    x4 <- unsafeGetByte
-    x3 <- unsafeGetByte
-    x2 <- unsafeGetByte
-    x1 <- unsafeGetByte
-    x0 <- unsafeGetByte
-    pure $ BigEndian $
-      x7 `unsafeShiftL` 56
-      .|. x6 `unsafeShiftL` 48
-      .|. x5 `unsafeShiftL` 40
-      .|. x4 `unsafeShiftL` 32
-      .|. x3 `unsafeShiftL` 24
-      .|. x2 `unsafeShiftL` 16
-      .|. x1 `unsafeShiftL` 8
-      .|. x0
+    BigEndian <$> unsafeGet64BE
   {-# INLINE get #-}
 
 instance Persist Word64 where

@@ -92,6 +92,10 @@ script:
   - cabal new-build -w ${HC} ${TEST} ${BENCH} all
   - if [ "x$TEST" = "x--enable-tests" ]; then cabal new-test -w ${HC} ${TEST} ${BENCH} all; fi
 
+  # build & run tests, build benchmarks this time with alignment friendly access
+  - cabal new-build -f force-aligned -w ${HC} ${TEST} ${BENCH} all
+  - if [ "x$TEST" = "x--enable-tests" ]; then cabal new-test -f force-aligned -w ${HC} ${TEST} ${BENCH} all; fi
+
   # cabal check
   - (cd persist-* && cabal check)
 
