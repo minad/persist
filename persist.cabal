@@ -25,12 +25,22 @@ source-repository head
   type:     git
   location: git://github.com/minad/persist
 
+flag force-unaligned
+        manual: True
+        default: False
+flag force-aligned
+        manual: True
+        default: False
+
 library
         default-language:       Haskell2010
 
-        build-depends:          base >= 4.4 && < 5, containers,
+        build-depends:          base >= 4.7 && < 5, containers,
                                 bytestring >= 0.10.4 && < 1,
                                 text >= 1.2 && < 1.3
+
+        if !flag(force-aligned) && (flag(force-unaligned) || arch(i386) || arch(x86_64))
+                cpp-options: -DUNALIGNED_MEMORY
 
         hs-source-dirs:         src
 
