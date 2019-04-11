@@ -785,7 +785,7 @@ instance Persist Char where
     if r <= 0x10FFFF then
       pure $ unsafeChr r
     else
-      fail "Invalid character"
+      getFail CharException "Invalid character"
   {-# INLINE get #-}
 
 instance Persist Text where
@@ -1030,9 +1030,26 @@ instance Monad Get where
   fail = Fail.fail
   {-# INLINE fail #-}
 
+data GetException =
+    LengthException Int String
+  | CharException Int String
+  | EOFException Int String
+  | GenericGetException Int String
+  deriving (Eq, Show)
+
+instance Exception GetException
+
 instance Fail.MonadFail Get where
-  fail msg = Get $ \_ _ -> fail $ "Failed reading: " <> msg
+  fail msg = getFail GenericGetException ("Failed reading: " <> msg)
   {-# INLINE fail #-}
+
+getOffset :: Get Int
+getOffset = Get $ \e p -> pure $! p :!: (p `minusPtr` (geBegin e))
+
+getFail :: (Int -> String -> GetException) -> String -> Get a
+getFail ctor msg = do
+  offset <- getOffset
+  Get $ \_ _ -> throwIO (ctor offset msg)
 
 -- | Run the Get monad applies a 'get'-based parser on the input ByteString
 runGet :: Get a -> ByteString -> Either String a
@@ -1041,17 +1058,17 @@ runGet m s = unsafePerformIO $ catch run handler
           let env = GetEnv { geBuf = buf, geBegin = p, geEnd = p `plusPtr` (pos + len), geTmp = t }
           _ :!: r <- unGet m env (p `plusPtr` pos)
           pure $ Right r
-        handler (e :: IOException) = pure $ Left $ displayException e
+        handler (e :: GetException) = pure $ Left $ displayException e
         (B.PS buf pos len) = s
 {-# NOINLINE runGet #-}
 
 -- | Ensure that @n@ bytes are available. Fails if fewer than @n@ bytes are available.
 ensure :: Int -> Get ()
 ensure n
-  | n < 0 = fail "ensure: negative length"
+  | n < 0 = getFail LengthException "ensure: negative length"
   | otherwise = do
       m <- remaining
-      when (m < n) $ fail "Not enough bytes available"
+      when (m < n) $ getFail LengthException "Not enough bytes available"
 {-# INLINE ensure #-}
 
 -- | Skip ahead @n@ bytes. Fails if fewer than @n@ bytes are available.
@@ -1071,7 +1088,7 @@ remaining = Get $ \e p -> pure $! p :!: geEnd e `minusPtr` p
 eof :: Get ()
 eof = do
   n <- remaining
-  when (n /= 0) $ fail "Expected end of file"
+  when (n /= 0) $ getFail EOFException "Expected end of file"
 {-# INLINE eof #-}
 
 -- | Pull @n@ bytes from the input, as a strict ByteString.
