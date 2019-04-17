@@ -777,7 +777,7 @@ instance Persist Char where
     if r <= 0x10FFFF then
       pure $ unsafeChr r
     else
-      getFail CharException "Invalid character"
+      failGet CharException "Invalid character"
   {-# INLINE get #-}
 
 instance Persist Text where
@@ -984,10 +984,10 @@ instance (GPersistGet a, KnownNat n) => GPersistGetSum n (C1 c a) where
 -- | Ensure that @n@ bytes are available. Fails if fewer than @n@ bytes are available.
 ensure :: Int -> Get ()
 ensure n
-  | n < 0 = getFail LengthException "ensure: negative length"
+  | n < 0 = failGet LengthException "ensure: negative length"
   | otherwise = do
       m <- remaining
-      when (m < n) $ getFail LengthException "Not enough bytes available"
+      when (m < n) $ failGet LengthException "Not enough bytes available"
 {-# INLINE ensure #-}
 
 -- | Skip ahead @n@ bytes. Fails if fewer than @n@ bytes are available.
@@ -1007,7 +1007,7 @@ remaining = Get $ \e p -> pure $! p :!: geEnd e `minusPtr` p
 eof :: Get ()
 eof = do
   n <- remaining
-  when (n /= 0) $ getFail EOFException "Expected end of file"
+  when (n /= 0) $ failGet EOFException "Expected end of file"
 {-# INLINE eof #-}
 
 -- | Pull @n@ bytes from the input, as a strict ByteString.

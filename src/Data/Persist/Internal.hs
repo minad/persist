@@ -25,8 +25,8 @@ module Data.Persist.Internal (
     , Get(..)
     , GetEnv(..)
     , GetException(..)
-    , getFail
     , getOffset
+    , failGet
     , runGet
     , runGetIO
 
@@ -98,8 +98,8 @@ instance Monad Get where
   fail = Fail.fail
   {-# INLINE fail #-}
 
-data GetException =
-    LengthException Int String
+data GetException
+  = LengthException Int String
   | CharException Int String
   | EOFException Int String
   | GenericGetException Int String
@@ -108,15 +108,15 @@ data GetException =
 instance Exception GetException
 
 instance Fail.MonadFail Get where
-  fail msg = getFail GenericGetException ("Failed reading: " <> msg)
+  fail msg = failGet GenericGetException ("Failed reading: " <> msg)
   {-# INLINE fail #-}
 
 getOffset :: Get Int
 getOffset = Get $ \e p -> pure $! p :!: (p `minusPtr` (geBegin e))
 {-# INLINE getOffset #-}
 
-getFail :: (Int -> String -> GetException) -> String -> Get a
-getFail ctor msg = do
+failGet :: (Int -> String -> GetException) -> String -> Get a
+failGet ctor msg = do
   offset <- getOffset
   Get $ \_ _ -> throwIO (ctor offset msg)
 
