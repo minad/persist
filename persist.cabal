@@ -45,7 +45,7 @@ library
         hs-source-dirs:         src
 
         exposed-modules:        Data.Persist,
-                                Data.Persist.Internals
+                                Data.Persist.Internal
 
         ghc-options:            -Wall -O2 -funbox-strict-fields
 
