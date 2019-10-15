@@ -9,3 +9,4 @@ cabal.sandbox.config
 *.o
 *.hi
 *.swp
+stack.yaml.lock

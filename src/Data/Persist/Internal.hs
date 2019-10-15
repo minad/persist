@@ -95,8 +95,10 @@ instance Monad Get where
     unGet (f x) e p'
   {-# INLINE (>>=) #-}
 
+#if !MIN_VERSION_base(4,11,0)
   fail = Fail.fail
   {-# INLINE fail #-}
+#endif
 
 data GetException
   = LengthException Int String
@@ -189,7 +191,7 @@ newChunk size = do
 -- | Ensure that @n@ bytes can be written.
 grow :: Int -> Put ()
 grow n
-  | n < 0 = fail "grow: negative length"
+  | n < 0 = error "grow: negative length"
   | otherwise = Put $ \e p -> do
       end <- readIORef (peEnd e)
       if end `minusPtr` p >= n then
