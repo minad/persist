@@ -59,9 +59,9 @@ infixl 2 :!:
 
 data GetEnv = GetEnv
   { geBuf   :: !(ForeignPtr Word8)
-  , geBegin :: !(Ptr Word8)
-  , geEnd   :: !(Ptr Word8)
-  , geTmp   :: !(Ptr Word8)
+  , geBegin :: {-#UNPACK#-}!(Ptr Word8)
+  , geEnd   :: {-#UNPACK#-}!(Ptr Word8)
+  , geTmp   :: {-#UNPACK#-}!(Ptr Word8)
   }
 
 newtype Get a = Get
@@ -137,14 +137,14 @@ runGet m s = unsafePerformIO $ catch (Right <$!> (runGetIO m s)) handler
 {-# NOINLINE runGet #-}
 
 data Chunk = Chunk
-  { chkBegin :: !(Ptr Word8)
-  , chkEnd   :: !(Ptr Word8)
+  { chkBegin :: {-#UNPACK#-}!(Ptr Word8)
+  , chkEnd   :: {-#UNPACK#-}!(Ptr Word8)
   }
 
 data PutEnv = PutEnv
   { peChks :: !(IORef (NonEmpty Chunk))
   , peEnd  :: !(IORef (Ptr Word8))
-  , peTmp  :: !(Ptr Word8)
+  , peTmp  :: {-#UNPACK#-}!(Ptr Word8)
   }
 
 newtype Put a = Put
