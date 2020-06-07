@@ -1,6 +1,9 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module GetTests (tests) where
 
@@ -31,16 +34,16 @@ data GetD
   deriving Show
 
 -- Get parser generator
-buildGet :: GetD -> Get ()
+buildGet :: forall s. GetD -> Get s ()
 buildGet = d  where
-  d Get8           =  get @Word8    *> pure ()
+  d Get8           =  get @s @Word8    *> pure ()
   d Eof            =  eof
-  d Get16be        =  getBE @Word16 *> pure ()
-  d Get32be        =  getBE @Word32 *> pure ()
-  d Get64be        =  getBE @Word64 *> pure ()
-  d Get16le        =  getLE @Word16 *> pure ()
-  d Get32le        =  getLE @Word32 *> pure ()
-  d Get64le        =  getLE @Word64 *> pure ()
+  d Get16be        =  getBE @s @Word16 *> pure ()
+  d Get32be        =  getBE @s @Word32 *> pure ()
+  d Get64be        =  getBE @s @Word64 *> pure ()
+  d Get16le        =  getLE @s @Word16 *> pure ()
+  d Get32le        =  getLE @s @Word32 *> pure ()
+  d Get64le        =  getLE @s @Word64 *> pure ()
   d (x :*>  y)     =  d x *>  d y
   d (Skip i)       =  skip i
 
@@ -61,7 +64,7 @@ genGetD =
 instance Arbitrary GetD where
   arbitrary = genGetD
 
-instance Arbitrary (Get ()) where
+instance Arbitrary (Get s ()) where
   arbitrary = buildGet <$> genGetD
 
 newtype R a =
@@ -85,10 +88,12 @@ instance Arbitrary Chunks where
 testLength :: Word
 testLength = 255
 
-(==!) :: Eq a => Get a -> Get a -> Property
+type instance GetState () = ()
+
+(==!) :: Eq a => Get () a -> Get () a -> Property
 p1 ==! p2 =
   conjoin
-  [ counterexample (show s) $ R (runGet p1 s) == R (runGet p2 s)
+  [ counterexample (show s) $ R (runGet p1 () s) == R (runGet p2 () s)
   | n <- [0 .. testLength]
   , let Chunks in0 = mkChunks n
         s = BS.pack $ concat in0

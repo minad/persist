@@ -23,20 +23,26 @@ module Data.Persist.Internal (
       (:!:)(..)
     -- * The Get type
     , Get(..)
+    , GetState
     , GetEnv(..)
     , GetException(..)
-    , getOffset
+    , offset
     , failGet
+    , stateGet
+    , setStateGet
     , runGet
     , runGetIO
 
     -- * The Put type
     , Put(..)
+    , PutState
     , PutEnv(..)
     , Chunk(..)
     , evalPut
     , evalPutIO
     , grow
+    , statePut
+    , setStatePut
 ) where
 
 import Control.Exception
@@ -57,24 +63,27 @@ import qualified Data.ByteString.Internal as B
 data a :!: b = !a :!: !b
 infixl 2 :!:
 
-data GetEnv = GetEnv
+type family GetState s
+
+data GetEnv s = GetEnv
   { geBuf   :: !(ForeignPtr Word8)
   , geBegin :: {-#UNPACK#-}!(Ptr Word8)
   , geEnd   :: {-#UNPACK#-}!(Ptr Word8)
   , geTmp   :: {-#UNPACK#-}!(Ptr Word8)
+  , geState :: !(IORef (GetState s))
   }
 
-newtype Get a = Get
-  { unGet :: GetEnv -> Ptr Word8 -> IO ((Ptr Word8) :!: a)
+newtype Get s a = Get
+  { unGet :: GetEnv s -> Ptr Word8 -> IO ((Ptr Word8) :!: a)
   }
 
-instance Functor Get where
+instance Functor (Get s) where
   fmap f m = Get $ \e p -> do
     p' :!: x <- unGet m e p
     pure $! p' :!: f x
   {-# INLINE fmap #-}
 
-instance Applicative Get where
+instance Applicative (Get s) where
   pure a = Get $ \_ p -> pure $! p :!: a
   {-# INLINE pure #-}
 
@@ -89,7 +98,7 @@ instance Applicative Get where
     m2
   {-# INLINE (*>) #-}
 
-instance Monad Get where
+instance Monad (Get s) where
   m >>= f = Get $ \e p -> do
     p' :!: x <- unGet m e p
     unGet (f x) e p'
@@ -109,31 +118,56 @@ data GetException
 
 instance Exception GetException
 
-instance Fail.MonadFail Get where
+instance Fail.MonadFail (Get s) where
   fail msg = failGet GenericGetException ("Failed reading: " <> msg)
   {-# INLINE fail #-}
 
-getOffset :: Get Int
-getOffset = Get $ \e p -> pure $! p :!: (p `minusPtr` (geBegin e))
-{-# INLINE getOffset #-}
+offset :: Get s Int
+offset = Get $ \e p -> pure $! p :!: (p `minusPtr` (geBegin e))
+{-# INLINE offset #-}
 
-failGet :: (Int -> String -> GetException) -> String -> Get a
+failGet :: (Int -> String -> GetException) -> String -> Get s a
 failGet ctor msg = do
-  offset <- getOffset
-  Get $ \_ _ -> throwIO (ctor offset msg)
+  off <- offset
+  Get $ \_ _ -> throwIO (ctor off msg)
 
-runGetIO :: Get a -> ByteString -> IO a
-runGetIO m s = run
+stateGet :: Get s (GetState s)
+stateGet = Get $ \e p -> do
+  s <- readIORef (geState e)
+  pure $! p :!: s
+{-# INLINE stateGet #-}
+
+statePut :: Put s (PutState s)
+statePut = Put $ \e p -> do
+  s <- readIORef (peState e)
+  pure $! p :!: s
+{-# INLINE statePut #-}
+
+setStateGet :: GetState s -> Get s ()
+setStateGet s = Get $ \e p -> do
+  writeIORef (geState e) s
+  pure $! p :!: ()
+{-# INLINE setStateGet #-}
+
+setStatePut :: PutState s -> Put s ()
+setStatePut s = Put $ \e p -> do
+  writeIORef (peState e) s
+  pure $! p :!: ()
+{-# INLINE setStatePut #-}
+
+runGetIO :: Get s a -> GetState s -> ByteString -> IO a
+runGetIO m g s = run
   where run = withForeignPtr buf $ \p -> allocaBytes 8 $ \t -> do
-          let env = GetEnv { geBuf = buf, geBegin = p, geEnd = p `plusPtr` (pos + len), geTmp = t }
+          rg <- newIORef g
+          let env = GetEnv { geState = rg, geBuf = buf, geBegin = p, geEnd = p `plusPtr` (pos + len), geTmp = t }
           _ :!: r <- unGet m env (p `plusPtr` pos)
           pure r
         (B.PS buf pos len) = s
 
 -- | Run the Get monad applies a 'get'-based parser on the input ByteString
-runGet :: Get a -> ByteString -> Either String a
-runGet m s = unsafePerformIO $ catch (Right <$!> (runGetIO m s)) handler
-  where handler (e :: GetException) = pure $ Left $ displayException e
+runGet :: Get s a -> GetState s -> ByteString -> Either String a
+runGet m g s = unsafePerformIO $ catch (Right <$!> (runGetIO m g s)) handler
+  where handler (x :: GetException) = pure $ Left $ displayException x
 {-# NOINLINE runGet #-}
 
 data Chunk = Chunk
@@ -141,22 +175,25 @@ data Chunk = Chunk
   , chkEnd   :: {-#UNPACK#-}!(Ptr Word8)
   }
 
-data PutEnv = PutEnv
+type family PutState s
+
+data PutEnv s = PutEnv
   { peChks :: !(IORef (NonEmpty Chunk))
   , peEnd  :: !(IORef (Ptr Word8))
   , peTmp  :: {-#UNPACK#-}!(Ptr Word8)
+  , peState :: !(IORef (PutState s))
   }
 
-newtype Put a = Put
-  { unPut :: PutEnv -> Ptr Word8 -> IO ((Ptr Word8) :!: a) }
+newtype Put s a = Put
+  { unPut :: PutEnv s -> Ptr Word8 -> IO ((Ptr Word8) :!: a) }
 
-instance Functor Put where
+instance Functor (Put s) where
   fmap f m = Put $ \e p -> do
     p' :!: x <- unPut m e p
     pure $! p' :!: f x
   {-# INLINE fmap #-}
 
-instance Applicative Put where
+instance Applicative (Put s) where
   pure a = Put $ \_ p -> pure $! p :!: a
   {-# INLINE pure #-}
 
@@ -171,7 +208,7 @@ instance Applicative Put where
     m2
   {-# INLINE (*>) #-}
 
-instance Monad Put where
+instance Monad (Put s) where
   m >>= f = Put $ \e p -> do
     p' :!: x <- unPut m e p
     unPut (f x) e p'
@@ -189,7 +226,7 @@ newChunk size = do
 {-# INLINE newChunk #-}
 
 -- | Ensure that @n@ bytes can be written.
-grow :: Int -> Put ()
+grow :: Int -> Put s ()
 grow n
   | n < 0 = error "grow: negative length"
   | otherwise = Put $ \e p -> do
@@ -200,7 +237,7 @@ grow n
         doGrow e p n
 {-# INLINE grow #-}
 
-doGrow :: PutEnv -> Ptr Word8 -> Int -> IO ((Ptr Word8) :!: ())
+doGrow :: PutEnv s -> Ptr Word8 -> Int -> IO ((Ptr Word8) :!: ())
 doGrow e p n = do
   k <- newChunk n
   modifyIORef' (peChks e) $ \case
@@ -222,18 +259,19 @@ catChunks chks = B.create (chunksLength chks) $ \p ->
                     pure (q `plusPtr` n)) p $ reverse chks
 {-# INLINE catChunks #-}
 
-evalPutIO :: Put a -> IO (a, ByteString)
-evalPutIO p = do
+evalPutIO :: Put s a -> PutState s -> IO (a, ByteString)
+evalPutIO p ps = do
   k <- newChunk 0
   chks <- newIORef (k:|[])
   end <- newIORef (chkEnd k)
+  rps <- newIORef ps
   p' :!: r <- allocaBytes 8 $ \t ->
-    unPut p PutEnv { peChks = chks, peEnd = end, peTmp = t } (chkBegin k)
+    unPut p PutEnv { peState = rps, peChks = chks, peEnd = end, peTmp = t } (chkBegin k)
   cs <- readIORef chks
   s <- case cs of
     (x:|xs) -> catChunks $ x { chkEnd = p' } : xs
   pure (r, s)
 
-evalPut :: Put a -> (a, ByteString)
-evalPut p = unsafePerformIO $ evalPutIO p
+evalPut :: Put s a -> PutState s -> (a, ByteString)
+evalPut s e = unsafePerformIO $ evalPutIO s e
 {-# NOINLINE evalPut #-}

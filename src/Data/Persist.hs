@@ -36,6 +36,9 @@ module Data.Persist (
 
     -- * The Get type
     , Get
+    , GetState
+    , stateGet
+    , setStateGet
     , runGet
     , ensure
     , skip
@@ -49,6 +52,9 @@ module Data.Persist (
 
     -- * The Put type
     , Put
+    , PutState
+    , statePut
+    , setStatePut
     , runPut
     , evalPut
     , grow
@@ -91,8 +97,8 @@ import qualified Data.Tree as T
 
 #include "MachDeps.h"
 
-putHE :: Persist (HostEndian a) => a -> Put ()
-getHE :: Persist (HostEndian a) => Get a
+putHE :: Persist s (HostEndian a) => a -> Put s ()
+getHE :: Persist s (HostEndian a) => Get s a
 {-# INLINE putHE #-}
 {-# INLINE getHE #-}
 
@@ -333,122 +339,122 @@ newtype BigEndian a = BigEndian { unBE :: a }
 newtype LittleEndian a = LittleEndian { unLE :: a }
   deriving (Show, Eq, Ord, Functor, Foldable, Traversable, Generic)
 
-class Persist t where
+class Persist s t where
   -- | Encode a value in the Put monad.
-  put :: t -> Put ()
+  put :: t -> Put s ()
   -- | Decode a value in the Get monad
-  get :: Get t
+  get :: Get s t
 
-  default put :: (Generic t, GPersistPut (Rep t)) => t -> Put ()
+  default put :: (Generic t, GPersistPut s (Rep t)) => t -> Put s ()
   put = gput . from
 
-  default get :: (Generic t, GPersistGet (Rep t)) => Get t
+  default get :: (Generic t, GPersistGet s (Rep t)) => Get s t
   get = to <$!> gget
 
 -- | Encode a value using binary serialization to a strict ByteString.
-encode :: Persist a => a -> ByteString
-encode = runPut . put
+encode :: forall s a. Persist s a => PutState s -> a -> ByteString
+encode s x = runPut (put @s x) s
 
 -- | Decode a value from a strict ByteString, reconstructing the original
 -- structure.
-decode :: Persist a => ByteString -> Either String a
-decode = runGet get
+decode :: forall s a. Persist s a => GetState s -> ByteString -> Either String a
+decode = runGet (get @s)
 
-putLE :: Persist (LittleEndian a) => a -> Put ()
+putLE :: Persist s (LittleEndian a) => a -> Put s ()
 putLE = put . LittleEndian
 {-# INLINE putLE #-}
 
-putBE :: Persist (BigEndian a) => a -> Put ()
+putBE :: Persist s (BigEndian a) => a -> Put s ()
 putBE = put . BigEndian
 {-# INLINE putBE #-}
 
-getLE :: Persist (LittleEndian a) => Get a
+getLE :: Persist s (LittleEndian a) => Get s a
 getLE = unLE <$!> get
 {-# INLINE getLE #-}
 
-getBE :: Persist (BigEndian a) => Get a
+getBE :: Persist s (BigEndian a) => Get s a
 getBE = unBE <$!> get
 {-# INLINE getBE #-}
 
-unsafePutByte :: Integral a => a -> Put ()
+unsafePutByte :: Integral a => a -> Put s ()
 unsafePutByte x = Put $ \_ p -> do
   poke p $ fromIntegral x
   pure $! p `plusPtr` 1 :!: ()
 {-# INLINE unsafePutByte #-}
 
-unsafePut16LE :: Integral a => a -> Put ()
+unsafePut16LE :: Integral a => a -> Put s ()
 unsafePut16LE x = Put $ \_ p -> do
   poke16LE p $ fromIntegral x
   pure $! p `plusPtr` 2 :!: ()
 {-# INLINE unsafePut16LE #-}
 
-unsafePut32LE :: Integral a => a -> Put ()
+unsafePut32LE :: Integral a => a -> Put s ()
 unsafePut32LE x = Put $ \_ p -> do
   poke32LE p $ fromIntegral x
   pure $! p `plusPtr` 4 :!: ()
 {-# INLINE unsafePut32LE #-}
 
-unsafePut64LE :: Integral a => a -> Put ()
+unsafePut64LE :: Integral a => a -> Put s ()
 unsafePut64LE x = Put $ \_ p -> do
   poke64LE p $ fromIntegral x
   pure $! p `plusPtr` 8 :!: ()
 {-# INLINE unsafePut64LE #-}
 
-unsafePut16BE :: Integral a => a -> Put ()
+unsafePut16BE :: Integral a => a -> Put s ()
 unsafePut16BE x = Put $ \_ p -> do
   poke16BE p $ fromIntegral x
   pure $! p `plusPtr` 2 :!: ()
 {-# INLINE unsafePut16BE #-}
 
-unsafePut32BE :: Integral a => a -> Put ()
+unsafePut32BE :: Integral a => a -> Put s ()
 unsafePut32BE x = Put $ \_ p -> do
   poke32BE p $ fromIntegral x
   pure $! p `plusPtr` 4 :!: ()
 {-# INLINE unsafePut32BE #-}
 
-unsafePut64BE :: Integral a => a -> Put ()
+unsafePut64BE :: Integral a => a -> Put s ()
 unsafePut64BE x = Put $ \_ p -> do
   poke64BE p $ fromIntegral x
   pure $! p `plusPtr` 8 :!: ()
 {-# INLINE unsafePut64BE #-}
 
-unsafeGetByte :: Num a => Get a
+unsafeGetByte :: Num a => Get s a
 unsafeGetByte = Get $ \_ p -> do
   x <- peek p
   pure $! p `plusPtr` 1 :!: fromIntegral x
 {-# INLINE unsafeGetByte #-}
 
-unsafeGet16LE :: Num a => Get a
+unsafeGet16LE :: Num a => Get s a
 unsafeGet16LE = Get $ \_ p -> do
   x <- peek16LE p
   pure $! p `plusPtr` 2 :!: fromIntegral x
 {-# INLINE unsafeGet16LE #-}
 
-unsafeGet32LE :: Num a => Get a
+unsafeGet32LE :: Num a => Get s a
 unsafeGet32LE = Get $ \_ p -> do
   x <- peek32LE p
   pure $! p `plusPtr` 4 :!: fromIntegral x
 {-# INLINE unsafeGet32LE #-}
 
-unsafeGet64LE :: Num a => Get a
+unsafeGet64LE :: Num a => Get s a
 unsafeGet64LE = Get $ \_ p -> do
   x <- peek64LE p
   pure $! p `plusPtr` 8 :!: fromIntegral x
 {-# INLINE unsafeGet64LE #-}
 
-unsafeGet16BE :: Num a => Get a
+unsafeGet16BE :: Num a => Get s a
 unsafeGet16BE = Get $ \_ p -> do
   x <- peek16BE p
   pure $! p `plusPtr` 2 :!: fromIntegral x
 {-# INLINE unsafeGet16BE #-}
 
-unsafeGet32BE :: Num a => Get a
+unsafeGet32BE :: Num a => Get s a
 unsafeGet32BE = Get $ \_ p -> do
   x <- peek32BE p
   pure $! p `plusPtr` 4 :!: fromIntegral x
 {-# INLINE unsafeGet32BE #-}
 
-unsafeGet64BE :: Num a => Get a
+unsafeGet64BE :: Num a => Get s a
 unsafeGet64BE = Get $ \_ p -> do
   x <- peek64BE p
   pure $! p `plusPtr` 8 :!: fromIntegral x
@@ -460,23 +466,23 @@ reinterpretCast p x = do
   peek (castPtr p)
 {-# INLINE reinterpretCast #-}
 
-reinterpretCastPut :: (Storable a, Storable b) => a -> Put b
+reinterpretCastPut :: (Storable a, Storable b) => a -> Put s b
 reinterpretCastPut x = Put $ \e p -> (p :!:) <$!> reinterpretCast (peTmp e) x
 {-# INLINE reinterpretCastPut #-}
 
-reinterpretCastGet :: (Storable a, Storable b) => a -> Get b
+reinterpretCastGet :: (Storable a, Storable b) => a -> Get s b
 reinterpretCastGet x = Get $ \e p -> (p :!:) <$!> reinterpretCast (geTmp e) x
 {-# INLINE reinterpretCastGet #-}
 
 -- The () type need never be written to disk: values of singleton type
 -- can be reconstructed from the type alone
-instance Persist () where
+instance Persist s () where
   put () = pure ()
   {-# INLINE put #-}
   get = pure ()
   {-# INLINE get #-}
 
-instance Persist Word8 where
+instance Persist s Word8 where
   put x = do
     grow 1
     unsafePutByte x
@@ -487,7 +493,7 @@ instance Persist Word8 where
     unsafeGetByte
   {-# INLINE get #-}
 
-instance Persist (LittleEndian Word16) where
+instance Persist s (LittleEndian Word16) where
   put x = do
     grow 2
     unsafePut16LE $ unLE x
@@ -498,7 +504,7 @@ instance Persist (LittleEndian Word16) where
     LittleEndian <$!> unsafeGet16LE
   {-# INLINE get #-}
 
-instance Persist (BigEndian Word16) where
+instance Persist s (BigEndian Word16) where
   put x = do
     grow 2
     unsafePut16BE $ unBE x
@@ -509,13 +515,13 @@ instance Persist (BigEndian Word16) where
     BigEndian <$!> unsafeGet16BE
   {-# INLINE get #-}
 
-instance Persist Word16 where
+instance Persist s Word16 where
   put = putLE
   {-# INLINE put #-}
   get = getLE
   {-# INLINE get #-}
 
-instance Persist (LittleEndian Word32) where
+instance Persist s (LittleEndian Word32) where
   put x = do
     grow 4
     unsafePut32LE $ unLE x
@@ -526,7 +532,7 @@ instance Persist (LittleEndian Word32) where
     LittleEndian <$!> unsafeGet32LE
   {-# INLINE get #-}
 
-instance Persist (BigEndian Word32) where
+instance Persist s (BigEndian Word32) where
   put x = do
     grow 4
     unsafePut32BE $ unBE x
@@ -537,13 +543,13 @@ instance Persist (BigEndian Word32) where
     BigEndian <$!> unsafeGet32BE
   {-# INLINE get #-}
 
-instance Persist Word32 where
+instance Persist s Word32 where
   put = putLE
   {-# INLINE put #-}
   get = getLE
   {-# INLINE get #-}
 
-instance Persist (LittleEndian Word64) where
+instance Persist s (LittleEndian Word64) where
   put x = do
     grow 8
     unsafePut64LE $ unLE x
@@ -554,7 +560,7 @@ instance Persist (LittleEndian Word64) where
     LittleEndian <$!> unsafeGet64LE
   {-# INLINE get #-}
 
-instance Persist (BigEndian Word64) where
+instance Persist s (BigEndian Word64) where
   put x = do
     grow 8
     unsafePut64BE $ unBE x
@@ -565,145 +571,145 @@ instance Persist (BigEndian Word64) where
     BigEndian <$!> unsafeGet64BE
   {-# INLINE get #-}
 
-instance Persist Word64 where
+instance Persist s Word64 where
   put = putLE
   {-# INLINE put #-}
   get = getLE
   {-# INLINE get #-}
 
-instance Persist Int8 where
-  put = put @Word8 . fromIntegral
+instance Persist s Int8 where
+  put = put @s @Word8 . fromIntegral
   {-# INLINE put #-}
-  get = fromIntegral <$!> get @Word8
+  get = fromIntegral <$!> get @s @Word8
   {-# INLINE get #-}
 
-instance Persist (LittleEndian Int16) where
+instance Persist s (LittleEndian Int16) where
   put = put . fmap (fromIntegral @_ @Word16)
   {-# INLINE put #-}
   get = fmap (fromIntegral @Word16) <$!> get
   {-# INLINE get #-}
 
-instance Persist (BigEndian Int16) where
+instance Persist s (BigEndian Int16) where
   put = put . fmap (fromIntegral @_ @Word16)
   {-# INLINE put #-}
   get = fmap (fromIntegral @Word16) <$!> get
   {-# INLINE get #-}
 
-instance Persist Int16 where
+instance Persist s Int16 where
   put = putLE
   {-# INLINE put #-}
   get = getLE
   {-# INLINE get #-}
 
-instance Persist (LittleEndian Int32) where
+instance Persist s (LittleEndian Int32) where
   put = put . fmap (fromIntegral @_ @Word32)
   {-# INLINE put #-}
   get = fmap (fromIntegral @Word32) <$!> get
   {-# INLINE get #-}
 
-instance Persist (BigEndian Int32) where
+instance Persist s (BigEndian Int32) where
   put = put . fmap (fromIntegral @_ @Word32)
   {-# INLINE put #-}
   get = fmap (fromIntegral @Word32) <$!> get
   {-# INLINE get #-}
 
-instance Persist Int32 where
+instance Persist s Int32 where
   put = putLE
   {-# INLINE put #-}
   get = getLE
   {-# INLINE get #-}
 
-instance Persist (LittleEndian Int64) where
+instance Persist s (LittleEndian Int64) where
   put = put . fmap (fromIntegral @_ @Word64)
   {-# INLINE put #-}
   get = fmap (fromIntegral @Word64) <$!> get
   {-# INLINE get #-}
 
-instance Persist (BigEndian Int64) where
+instance Persist s (BigEndian Int64) where
   put = put . fmap (fromIntegral @_ @Word64)
   {-# INLINE put #-}
   get = fmap (fromIntegral @Word64) <$!> get
   {-# INLINE get #-}
 
-instance Persist Int64 where
+instance Persist s Int64 where
   put = putLE
   {-# INLINE put #-}
   get = getLE
   {-# INLINE get #-}
 
-instance Persist (LittleEndian Double) where
-  put x = reinterpretCastPut (unLE x) >>= putLE @Word64
+instance Persist s (LittleEndian Double) where
+  put x = reinterpretCastPut (unLE x) >>= putLE @s @Word64
   {-# INLINE put #-}
-  get = getLE @Word64 >>= fmap LittleEndian . reinterpretCastGet
+  get = getLE @s @Word64 >>= fmap LittleEndian . reinterpretCastGet
   {-# INLINE get #-}
 
-instance Persist (BigEndian Double) where
-  put x = reinterpretCastPut (unBE x) >>= putBE @Word64
+instance Persist s (BigEndian Double) where
+  put x = reinterpretCastPut (unBE x) >>= putBE @s @Word64
   {-# INLINE put #-}
-  get = getBE @Word64 >>= fmap BigEndian . reinterpretCastGet
+  get = getBE @s @Word64 >>= fmap BigEndian . reinterpretCastGet
   {-# INLINE get #-}
 
-instance Persist Double where
+instance Persist s Double where
   put = putLE
   {-# INLINE put #-}
   get = getLE
   {-# INLINE get #-}
 
-instance Persist (LittleEndian Float) where
-  put x = reinterpretCastPut (unLE x) >>= putLE @Word32
+instance Persist s (LittleEndian Float) where
+  put x = reinterpretCastPut (unLE x) >>= putLE @s @Word32
   {-# INLINE put #-}
-  get = getLE @Word32 >>= fmap LittleEndian . reinterpretCastGet
+  get = getLE @s @Word32 >>= fmap LittleEndian . reinterpretCastGet
   {-# INLINE get #-}
 
-instance Persist (BigEndian Float) where
-  put x = reinterpretCastPut (unBE x) >>= putBE @Word32
+instance Persist s (BigEndian Float) where
+  put x = reinterpretCastPut (unBE x) >>= putBE @s @Word32
   {-# INLINE put #-}
-  get = getBE @Word32 >>= fmap BigEndian . reinterpretCastGet
+  get = getBE @s @Word32 >>= fmap BigEndian . reinterpretCastGet
   {-# INLINE get #-}
 
-instance Persist Float where
+instance Persist s Float where
   put = putLE
   {-# INLINE put #-}
   get = getLE
   {-# INLINE get #-}
 
-instance Persist (LittleEndian Word) where
+instance Persist s (LittleEndian Word) where
   put = put . fmap (fromIntegral @_ @Word64)
   {-# INLINE put #-}
   get = fmap (fromIntegral @Word64) <$!> get
   {-# INLINE get #-}
 
-instance Persist (BigEndian Word) where
+instance Persist s (BigEndian Word) where
   put = put . fmap (fromIntegral @_ @Word64)
   {-# INLINE put #-}
   get = fmap (fromIntegral @Word64) <$!> get
   {-# INLINE get #-}
 
-instance Persist Word where
+instance Persist s Word where
   put = putLE
   {-# INLINE put #-}
   get = getLE
   {-# INLINE get #-}
 
-instance Persist (LittleEndian Int) where
+instance Persist s (LittleEndian Int) where
   put = put . fmap (fromIntegral @_ @Int64)
   {-# INLINE put #-}
   get = fmap (fromIntegral @Int64) <$!> get
   {-# INLINE get #-}
 
-instance Persist (BigEndian Int) where
+instance Persist s (BigEndian Int) where
   put = put . fmap (fromIntegral @_ @Int64)
   {-# INLINE put #-}
   get = fmap (fromIntegral @Int64) <$!> get
   {-# INLINE get #-}
 
-instance Persist Int where
+instance Persist s Int where
   put = putLE
   {-# INLINE put #-}
   get = getLE
   {-# INLINE get #-}
 
-instance Persist Integer where
+instance Persist s Integer where
   put n = do
     put $ n < 0
     put $ unroll $ abs n
@@ -722,19 +728,19 @@ roll :: (Integral a, Bits a) => [Word8] -> a
 roll = foldr unstep 0
   where unstep b a = a `unsafeShiftL` 8 .|. fromIntegral b
 
-instance Persist a => Persist (Ratio a) where
+instance Persist s a => Persist s (Ratio a) where
   put (n :% d) = put n *> put d
   {-# INLINE put #-}
 
   get = (:%) <$!> get <*> get
   {-# INLINE get #-}
 
-instance Persist Natural where
+instance Persist s Natural where
   put = put . unroll
   get = roll <$!> get
 
 -- Char is serialized as UTF-8
-instance Persist Char where
+instance Persist s Char where
   put a | c <= 0x7f     = put (fromIntegral c :: Word8)
         | c <= 0x7ff    = do put (0xc0 .|. y)
                              put (0x80 .|. z)
@@ -756,7 +762,7 @@ instance Persist Char where
   {-# INLINE put #-}
 
   get = do
-    let byte = fromIntegral <$!> get @Word8
+    let byte = fromIntegral <$!> get @s @Word8
         shiftL6 = flip unsafeShiftL 6
     w <- byte
     r <- if | w < 0x80  -> pure w
@@ -780,7 +786,7 @@ instance Persist Char where
       failGet CharException "Invalid character"
   {-# INLINE get #-}
 
-instance Persist Text where
+instance Persist s Text where
   put = put . TE.encodeUtf8
   {-# INLINE put #-}
   get = do
@@ -788,59 +794,59 @@ instance Persist Text where
     TE.decodeUtf8 <$!> getBytes n
   {-# INLINE get #-}
 
-instance Persist Bool
-instance Persist Ordering
-instance (Persist a) => Persist (Maybe a)
-instance Persist e => Persist (T.Tree e)
-instance (Persist a, Persist b) => Persist (Either a b)
-instance (Persist a, Persist b) => Persist (a,b)
-instance (Persist a, Persist b, Persist c) => Persist (a,b,c)
-instance (Persist a, Persist b, Persist c, Persist d)
-        => Persist (a,b,c,d)
-instance (Persist a, Persist b, Persist c, Persist d, Persist e)
-        => Persist (a,b,c,d,e)
-instance (Persist a, Persist b, Persist c, Persist d, Persist e
-         , Persist f)
-        => Persist (a,b,c,d,e,f)
-instance (Persist a, Persist b, Persist c, Persist d, Persist e
-         , Persist f, Persist g)
-        => Persist (a,b,c,d,e,f,g)
-instance Persist a => Persist (M.Dual a)
-instance Persist M.All
-instance Persist M.Any
-instance Persist a => Persist (M.Sum a)
-instance Persist a => Persist (M.Product a)
-instance Persist a => Persist (M.First a)
-instance Persist a => Persist (M.Last a)
+instance Persist s Bool
+instance Persist s Ordering
+instance Persist s a => Persist s (Maybe a)
+instance Persist s e => Persist s (T.Tree e)
+instance (Persist s a, Persist s b) => Persist s (Either a b)
+instance (Persist s a, Persist s b) => Persist s (a,b)
+instance (Persist s a, Persist s b, Persist s c) => Persist s (a,b,c)
+instance (Persist s a, Persist s b, Persist s c, Persist s d)
+        => Persist s (a,b,c,d)
+instance (Persist s a, Persist s b, Persist s c, Persist s d, Persist s e)
+        => Persist s (a,b,c,d,e)
+instance (Persist s a, Persist s b, Persist s c, Persist s d, Persist s e
+         , Persist s f)
+        => Persist s (a,b,c,d,e,f)
+instance (Persist s a, Persist s b, Persist s c, Persist s d, Persist s e
+         , Persist s f, Persist s h)
+        => Persist s (a,b,c,d,e,f,h)
+instance Persist s a => Persist s (M.Dual a)
+instance Persist s M.All
+instance Persist s M.Any
+instance Persist s a => Persist s (M.Sum a)
+instance Persist s a => Persist s (M.Product a)
+instance Persist s a => Persist s (M.First a)
+instance Persist s a => Persist s (M.Last a)
 
 -- | Persist a list in the following format:
 --   Word64 (little endian format)
 --   element 1
 --   ...
 --   element n
-instance Persist a => Persist [a] where
+instance Persist s a => Persist s [a] where
     put l = do
       put $ length l
       mapM_ put l
     {-# INLINE put #-}
 
-    get = go [] =<< get @Word64
+    get = go [] =<< get @s @Word64
       where go as 0 = pure $! reverse as
             go as i = do x <- get
                          x `seq` go (x:as) (i - 1)
     {-# INLINE get #-}
 
-instance Persist ByteString where
+instance Persist s ByteString where
   put s = do
     put $ B.length s
     putByteString s
   get = get >>= getByteString
 
-instance Persist L.ByteString where
+instance Persist s L.ByteString where
   put = put . L.toStrict
   get = L.fromStrict <$!> get
 
-instance Persist S.ShortByteString where
+instance Persist s S.ShortByteString where
   put s = do
     let n = S.length s
     put n
@@ -851,35 +857,35 @@ instance Persist S.ShortByteString where
 
   get = S.toShort <$!> get
 
-instance (Ord a, Persist a) => Persist (Set a) where
+instance (Ord a, Persist s a) => Persist s (Set a) where
   put = put . toList
   {-# INLINE put #-}
   get = fromList <$!> get
   {-# INLINE get #-}
 
-instance (Ord k, Persist k, Persist e) => Persist (Map k e) where
+instance (Ord k, Persist s k, Persist s e) => Persist s (Map k e) where
   put = put . toList
   {-# INLINE put #-}
   get = fromList <$!> get
   {-# INLINE get #-}
 
-instance Persist IntSet where
+instance Persist s IntSet where
   put = put . toList
   get = fromList <$!> get
 
-instance Persist e => Persist (NonEmpty e) where
-  put = put . toList
-  {-# INLINE put #-}
-  get = fromList <$!> get
-  {-# INLINE get #-}
-
-instance Persist e => Persist (IntMap e) where
+instance Persist s e => Persist s (NonEmpty e) where
   put = put . toList
   {-# INLINE put #-}
   get = fromList <$!> get
   {-# INLINE get #-}
 
-instance Persist e => Persist (Seq e) where
+instance Persist s e => Persist s (IntMap e) where
+  put = put . toList
+  {-# INLINE put #-}
+  get = fromList <$!> get
+  {-# INLINE get #-}
+
+instance Persist s e => Persist s (Seq e) where
   put = put . toList
   {-# INLINE put #-}
   get = fromList <$!> get
@@ -889,76 +895,76 @@ type family SumArity (a :: * -> *) :: Nat where
   SumArity (C1 c a) = 1
   SumArity (x :+: y) = SumArity x + SumArity y
 
-class GPersistPut f where
-  gput :: f a -> Put ()
+class GPersistPut s f where
+  gput :: f a -> Put s ()
 
-class GPersistGet f where
-  gget :: Get (f a)
+class GPersistGet s f where
+  gget :: Get s (f a)
 
-instance GPersistPut f => GPersistPut (M1 i c f) where
+instance GPersistPut s f => GPersistPut s (M1 i c f) where
   gput = gput . unM1
   {-# INLINE gput #-}
 
-instance GPersistGet f => GPersistGet (M1 i c f) where
+instance GPersistGet s f => GPersistGet s (M1 i c f) where
   gget = fmap M1 gget
   {-# INLINE gget #-}
 
-instance Persist a => GPersistPut (K1 i a) where
+instance Persist s a => GPersistPut s (K1 i a) where
   gput = put . unK1
   {-# INLINE gput #-}
 
-instance Persist a => GPersistGet (K1 i a) where
+instance Persist s a => GPersistGet s (K1 i a) where
   gget = fmap K1 get
   {-# INLINE gget #-}
 
-instance GPersistPut U1 where
+instance GPersistPut s U1 where
   gput _ = pure ()
   {-# INLINE gput #-}
 
-instance GPersistGet U1 where
+instance GPersistGet s U1 where
   gget = pure U1
   {-# INLINE gget #-}
 
-instance GPersistPut V1 where
+instance GPersistPut s V1 where
   gput x = case x of {}
   {-# INLINE gput #-}
 
-instance GPersistGet V1 where
+instance GPersistGet s V1 where
   gget = undefined
   {-# INLINE gget #-}
 
-instance (GPersistPut a, GPersistPut b) => GPersistPut (a :*: b) where
+instance (GPersistPut s a, GPersistPut s b) => GPersistPut s (a :*: b) where
   gput (a :*: b) = gput a *> gput b
   {-# INLINE gput #-}
 
-instance (GPersistGet a, GPersistGet b) => GPersistGet (a :*: b) where
+instance (GPersistGet s a, GPersistGet s b) => GPersistGet s (a :*: b) where
   gget = (:*:) <$!> gget <*> gget
   {-# INLINE gget #-}
 
-instance (SumArity (a :+: b) <= 255, GPersistPutSum 0 (a :+: b)) => GPersistPut (a :+: b) where
+instance (SumArity (a :+: b) <= 255, GPersistPutSum s 0 (a :+: b)) => GPersistPut s (a :+: b) where
   gput x = gputSum x (Proxy :: Proxy 0)
   {-# INLINE gput #-}
 
-instance (SumArity (a :+: b) <= 255, GPersistGetSum 0 (a :+: b)) => GPersistGet (a :+: b) where
+instance (SumArity (a :+: b) <= 255, GPersistGetSum s 0 (a :+: b)) => GPersistGet s (a :+: b) where
   gget = do
     tag <- get
     ggetSum tag (Proxy :: Proxy 0)
   {-# INLINE gget #-}
 
-class KnownNat n => GPersistPutSum (n :: Nat) (f :: * -> *) where
-  gputSum :: f p -> Proxy n -> Put ()
+class KnownNat n => GPersistPutSum s (n :: Nat) (f :: * -> *) where
+  gputSum :: f p -> Proxy n -> Put s ()
 
-class KnownNat n => GPersistGetSum (n :: Nat) (f :: * -> *) where
-  ggetSum :: Word8 -> Proxy n -> Get (f p)
+class KnownNat n => GPersistGetSum s (n :: Nat) (f :: * -> *) where
+  ggetSum :: Word8 -> Proxy n -> Get s (f p)
 
-instance (GPersistPutSum n a, GPersistPutSum (n + SumArity a) b, KnownNat n)
-         => GPersistPutSum n (a :+: b) where
+instance (GPersistPutSum s n a, GPersistPutSum s (n + SumArity a) b, KnownNat n)
+         => GPersistPutSum s n (a :+: b) where
   gputSum (L1 l) _ = gputSum l (Proxy :: Proxy n)
   gputSum (R1 r) _ = gputSum r (Proxy :: Proxy (n + SumArity a))
   {-# INLINE gputSum #-}
 
-instance (GPersistGetSum n a, GPersistGetSum (n + SumArity a) b, KnownNat n)
-         => GPersistGetSum n (a :+: b) where
+instance (GPersistGetSum s n a, GPersistGetSum s (n + SumArity a) b, KnownNat n)
+         => GPersistGetSum s n (a :+: b) where
   ggetSum tag proxyL
     | tag < sizeL = L1 <$!> ggetSum tag proxyL
     | otherwise = R1 <$!> ggetSum tag (Proxy :: Proxy (n + SumArity a))
@@ -966,13 +972,13 @@ instance (GPersistGetSum n a, GPersistGetSum (n + SumArity a) b, KnownNat n)
       sizeL = fromInteger (natVal (Proxy :: Proxy (n + SumArity a)))
   {-# INLINE ggetSum #-}
 
-instance (GPersistPut a, KnownNat n) => GPersistPutSum n (C1 c a) where
+instance (GPersistPut s a, KnownNat n) => GPersistPutSum s n (C1 c a) where
   gputSum x _ = do
     put (fromInteger (natVal (Proxy :: Proxy n)) :: Word8)
     gput x
   {-# INLINE gputSum #-}
 
-instance (GPersistGet a, KnownNat n) => GPersistGetSum n (C1 c a) where
+instance (GPersistGet s a, KnownNat n) => GPersistGetSum s n (C1 c a) where
   ggetSum tag _
     | tag == cur = gget
     | tag > cur = fail "Sum tag invalid"
@@ -982,7 +988,7 @@ instance (GPersistGet a, KnownNat n) => GPersistGetSum n (C1 c a) where
   {-# INLINE ggetSum #-}
 
 -- | Ensure that @n@ bytes are available. Fails if fewer than @n@ bytes are available.
-ensure :: Int -> Get ()
+ensure :: Int -> Get s ()
 ensure n
   | n < 0 = failGet LengthException "ensure: negative length"
   | otherwise = do
@@ -991,7 +997,7 @@ ensure n
 {-# INLINE ensure #-}
 
 -- | Skip ahead @n@ bytes. Fails if fewer than @n@ bytes are available.
-skip :: Int -> Get ()
+skip :: Int -> Get s ()
 skip n = do
   ensure n
   Get $ \_ p -> pure $! p `plusPtr` n :!: ()
@@ -999,19 +1005,19 @@ skip n = do
 
 -- | Get the number of remaining unparsed bytes.  Useful for checking whether
 -- all input has been consumed.
-remaining :: Get Int
+remaining :: Get s Int
 remaining = Get $ \e p -> pure $! p :!: geEnd e `minusPtr` p
 {-# INLINE remaining #-}
 
 -- -- | Succeed if end of input reached.
-eof :: Get ()
+eof :: Get s ()
 eof = do
   n <- remaining
   when (n /= 0) $ failGet EOFException "Expected end of file"
 {-# INLINE eof #-}
 
 -- | Pull @n@ bytes from the input, as a strict ByteString.
-getBytes :: Int -> Get ByteString
+getBytes :: Int -> Get s ByteString
 getBytes n = do
   ensure n
   Get $ \e p -> pure $! p `plusPtr` n :!: B.PS (geBuf e) (p `minusPtr` geBegin e) n
@@ -1020,15 +1026,15 @@ getBytes n = do
 -- | An efficient 'get' method for strict ByteStrings. Fails if fewer
 -- than @n@ bytes are left in the input. This function creates a fresh
 -- copy of the underlying bytes.
-getByteString :: Int -> Get ByteString
+getByteString :: Int -> Get s ByteString
 getByteString n = B.copy <$!> getBytes n
 {-# INLINE getByteString #-}
 
-runPut :: Put a -> ByteString
-runPut = snd . evalPut
+runPut :: Put s a -> PutState s -> ByteString
+runPut s = snd . evalPut s
 {-# INLINE runPut #-}
 
-putByteString :: ByteString -> Put ()
+putByteString :: ByteString -> Put s ()
 putByteString (B.PS b o n) = do
   grow n
   Put $ \_ p -> do
