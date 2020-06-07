@@ -39,6 +39,7 @@ module Data.Persist (
     , GetState
     , stateGet
     , setStateGet
+    , modifyStateGet
     , runGet
     , ensure
     , skip
@@ -55,6 +56,7 @@ module Data.Persist (
     , PutState
     , statePut
     , setStatePut
+    , modifyStatePut
     , runPut
     , evalPut
     , grow
@@ -1041,3 +1043,15 @@ putByteString (B.PS b o n) = do
     withForeignPtr b $ \q -> B.memcpy p (q `plusPtr` o) n
     pure $! p `plusPtr` n :!: ()
 {-# INLINE putByteString #-}
+
+modifyStateGet :: (GetState s -> GetState s) -> Get s ()
+modifyStateGet f = do
+  s <- stateGet
+  setStateGet (f s)
+{-# INLINE modifyStateGet #-}
+
+modifyStatePut :: (PutState s -> PutState s) -> Put s ()
+modifyStatePut f = do
+  s <- statePut
+  setStatePut (f s)
+{-# INLINE modifyStatePut #-}
