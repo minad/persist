@@ -1,12 +1,16 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE CPP #-}
 
 module GetTests (tests) where
 
 import           Control.Applicative
 import           Control.Monad
 import           Data.Word
+#if !MIN_VERSION_base(4,11,0)
+import           Data.Monoid ((<>))
+#endif
 import           Data.Function
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LB

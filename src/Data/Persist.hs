@@ -87,7 +87,9 @@ import qualified Data.ByteString.Short as S
 import qualified Data.ByteString.Short.Internal as S
 import qualified Data.Monoid as M
 import qualified Data.Text.Encoding as TE
+#if MIN_VERSION_containers(0,5,8)
 import qualified Data.Tree as T
+#endif
 
 #include "MachDeps.h"
 
@@ -791,7 +793,9 @@ instance Persist Text where
 instance Persist Bool
 instance Persist Ordering
 instance (Persist a) => Persist (Maybe a)
+#if MIN_VERSION_containers(0,5,8)
 instance Persist e => Persist (T.Tree e)
+#endif
 instance (Persist a, Persist b) => Persist (Either a b)
 instance (Persist a, Persist b) => Persist (a,b)
 instance (Persist a, Persist b, Persist c) => Persist (a,b,c)

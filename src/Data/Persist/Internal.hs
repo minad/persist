@@ -45,6 +45,9 @@ import Data.ByteString (ByteString)
 import Data.Foldable (foldlM)
 import Data.IORef
 import Data.List.NonEmpty (NonEmpty(..))
+#if !MIN_VERSION_base(4,11,0)
+import Data.Monoid ((<>))
+#endif
 import Data.Word
 import Foreign (ForeignPtr, Ptr, plusPtr, minusPtr,
                 withForeignPtr, mallocBytes, free, allocaBytes)
