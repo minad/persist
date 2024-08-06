@@ -48,6 +48,7 @@ import Data.List.NonEmpty (NonEmpty(..))
 import Data.Word
 import Foreign (ForeignPtr, Ptr, plusPtr, minusPtr,
                 withForeignPtr, mallocBytes, free, allocaBytes)
+import Foreign.Marshal.Utils (copyBytes)
 import System.IO.Unsafe
 import qualified Control.Monad.Fail as Fail
 import qualified Data.ByteString.Internal as B
@@ -217,7 +218,7 @@ catChunks :: [Chunk] -> IO ByteString
 catChunks chks = B.create (chunksLength chks) $ \p ->
   void $ foldlM (\q c -> do
                     let n = chkEnd c `minusPtr` chkBegin c
-                    B.memcpy q (chkBegin c) n
+                    copyBytes q (chkBegin c) n
                     free $ chkBegin c
                     pure (q `plusPtr` n)) p $ reverse chks
 {-# INLINE catChunks #-}

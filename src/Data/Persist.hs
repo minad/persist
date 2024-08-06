@@ -58,12 +58,13 @@ module Data.Persist (
     , putBE
 ) where
 
-import Control.Monad
-import Data.Bits
+import Control.Monad ((<$!>), when)
+import Data.Bits (Bits (..))
 import Data.ByteString (ByteString)
-import Data.Int
+import Data.Int (Int8, Int16, Int32, Int64)
 import Data.IntMap (IntMap)
 import Data.IntSet (IntSet)
+import Data.Kind (Type)
 import Data.List (unfoldr)
 import Data.List.NonEmpty (NonEmpty(..))
 import Data.Map (Map)
@@ -72,14 +73,14 @@ import Data.Proxy
 import Data.Sequence (Seq)
 import Data.Set (Set)
 import Data.Text (Text)
-import Data.Word
+import Data.Word (Word8, Word16, Word32, Word64, byteSwap16, byteSwap32, byteSwap64)
 import Foreign (Ptr, Storable(..), plusPtr, minusPtr, castPtr, withForeignPtr)
+import Foreign.Marshal.Utils (copyBytes)
 import GHC.Base (unsafeChr, ord)
 import GHC.Exts (IsList(..))
 import GHC.Generics
 import GHC.Real (Ratio(..))
-import GHC.TypeLits
-import Numeric.Natural
+import GHC.TypeLits (KnownNat, Nat, Natural, type (+), type (<=), natVal)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Internal as B
 import qualified Data.ByteString.Lazy as L
@@ -885,7 +886,7 @@ instance Persist e => Persist (Seq e) where
   get = fromList <$!> get
   {-# INLINE get #-}
 
-type family SumArity (a :: * -> *) :: Nat where
+type family SumArity (a :: Type -> Type) :: Nat where
   SumArity (C1 c a) = 1
   SumArity (x :+: y) = SumArity x + SumArity y
 
@@ -945,10 +946,10 @@ instance (SumArity (a :+: b) <= 255, GPersistGetSum 0 (a :+: b)) => GPersistGet 
     ggetSum tag (Proxy :: Proxy 0)
   {-# INLINE gget #-}
 
-class KnownNat n => GPersistPutSum (n :: Nat) (f :: * -> *) where
+class KnownNat n => GPersistPutSum (n :: Nat) (f :: Type -> Type) where
   gputSum :: f p -> Proxy n -> Put ()
 
-class KnownNat n => GPersistGetSum (n :: Nat) (f :: * -> *) where
+class KnownNat n => GPersistGetSum (n :: Nat) (f :: Type -> Type) where
   ggetSum :: Word8 -> Proxy n -> Get (f p)
 
 instance (GPersistPutSum n a, GPersistPutSum (n + SumArity a) b, KnownNat n)
@@ -1032,6 +1033,6 @@ putByteString :: ByteString -> Put ()
 putByteString (B.PS b o n) = do
   grow n
   Put $ \_ p -> do
-    withForeignPtr b $ \q -> B.memcpy p (q `plusPtr` o) n
+    withForeignPtr b $ \q -> copyBytes p (q `plusPtr` o) n
     pure $! p `plusPtr` n :!: ()
 {-# INLINE putByteString #-}
