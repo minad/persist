@@ -58,7 +58,7 @@ data GetEnv = GetEnv
   }
 
 newtype Get a = Get
-  { unGet :: GetEnv -> Ptr Word8 -> IO ((Ptr Word8) :!: a)
+  { unGet :: GetEnv -> Ptr Word8 -> IO (Ptr Word8 :!: a)
   }
 
 instance Functor Get where
@@ -107,7 +107,7 @@ instance Fail.MonadFail Get where
   {-# INLINE fail #-}
 
 getOffset :: Get Int
-getOffset = Get $ \e p -> pure $! p :!: (p `minusPtr` (geBegin e))
+getOffset = Get $ \e p -> pure $! p :!: (p `minusPtr` geBegin e)
 {-# INLINE getOffset #-}
 
 failGet :: (Int -> String -> GetException) -> String -> Get a
@@ -125,7 +125,7 @@ runGetIO m s = run
 
 -- | Run the Get monad applies a 'get'-based parser on the input ByteString
 runGet :: Get a -> ByteString -> Either String a
-runGet m s = unsafePerformIO $ catch (Right <$!> (runGetIO m s)) handler
+runGet m s = unsafePerformIO $ catch (Right <$!> runGetIO m s) handler
   where handler (e :: GetException) = pure $ Left $ displayException e
 {-# NOINLINE runGet #-}
 
@@ -141,7 +141,7 @@ data PutEnv = PutEnv
   }
 
 newtype Put a = Put
-  { unPut :: PutEnv -> Ptr Word8 -> IO ((Ptr Word8) :!: a) }
+  { unPut :: PutEnv -> Ptr Word8 -> IO (Ptr Word8 :!: a) }
 
 instance Functor Put where
   fmap f m = Put $ \e p -> do
@@ -193,14 +193,14 @@ grow n
         doGrow e p n
 {-# INLINE grow #-}
 
-doGrow :: PutEnv -> Ptr Word8 -> Int -> IO ((Ptr Word8) :!: ())
+doGrow :: PutEnv -> Ptr Word8 -> Int -> IO (Ptr Word8 :!: ())
 doGrow e p n = do
   k <- newChunk n
   modifyIORef' (peChks e) $ \case
     (c:|cs) ->
       let !c' = c { chkEnd = p }
        in k :| c' : cs
-  writeIORef (peEnd e) $! (chkEnd k)
+  writeIORef (peEnd e) $! chkEnd k
   pure $! chkBegin k :!: ()
 {-# NOINLINE doGrow #-}
 

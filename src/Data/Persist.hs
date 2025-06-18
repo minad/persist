@@ -143,15 +143,15 @@ peekByte p = do
 {-# INLINE peekByte #-}
 
 poke16LE p y = do
-  pokeByte p $ y
+  pokeByte p y
   pokeByte (p `plusPtr` 1) $ y `unsafeShiftR` 8
 
 poke16BE p y = do
   pokeByte p $ y `unsafeShiftR` 8
-  pokeByte (p `plusPtr` 1) $ y
+  pokeByte (p `plusPtr` 1) y
 
 poke32LE p y = do
-  pokeByte p $ y
+  pokeByte p y
   pokeByte (p `plusPtr` 1) $ y `unsafeShiftR` 8
   pokeByte (p `plusPtr` 2) $ y `unsafeShiftR` 16
   pokeByte (p `plusPtr` 3) $ y `unsafeShiftR` 24
@@ -160,10 +160,10 @@ poke32BE p y = do
   pokeByte p $ y `unsafeShiftR` 24
   pokeByte (p `plusPtr` 1) $ y `unsafeShiftR` 16
   pokeByte (p `plusPtr` 2) $ y `unsafeShiftR` 8
-  pokeByte (p `plusPtr` 3) $ y
+  pokeByte (p `plusPtr` 3) y
 
 poke64LE p y = do
-  pokeByte p $ y
+  pokeByte p y
   pokeByte (p `plusPtr` 1) $ y `unsafeShiftR` 8
   pokeByte (p `plusPtr` 2) $ y `unsafeShiftR` 16
   pokeByte (p `plusPtr` 3) $ y `unsafeShiftR` 24
@@ -180,7 +180,7 @@ poke64BE p y = do
   pokeByte (p `plusPtr` 4) $ y `unsafeShiftR` 24
   pokeByte (p `plusPtr` 5) $ y `unsafeShiftR` 16
   pokeByte (p `plusPtr` 6) $ y `unsafeShiftR` 8
-  pokeByte (p `plusPtr` 7) $ y
+  pokeByte (p `plusPtr` 7) y
 
 peek16LE p = do
   !x0 <- peekByte @Word16 p
