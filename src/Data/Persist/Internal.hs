@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
@@ -42,7 +43,7 @@ module Data.Persist.Internal (
 import Control.Exception
 import Control.Monad
 import Data.ByteString (ByteString)
-import Data.Foldable (foldlM)
+import Data.Foldable (foldl', foldlM)
 import Data.IORef
 import Data.List.NonEmpty (NonEmpty(..))
 import Data.Word
@@ -205,13 +206,15 @@ doGrow :: PutEnv -> Ptr Word8 -> Int -> IO ((Ptr Word8) :!: ())
 doGrow e p n = do
   k <- newChunk n
   modifyIORef' (peChks e) $ \case
-    (c:|cs) -> k :| c { chkEnd = p } : cs
-  writeIORef (peEnd e) (chkEnd k)
+    (c:|cs) ->
+      let !c' = c { chkEnd = p }
+       in k :| c' : cs
+  writeIORef (peEnd e) $! (chkEnd k)
   pure $! chkBegin k :!: ()
 {-# NOINLINE doGrow #-}
 
 chunksLength :: [Chunk] -> Int
-chunksLength = foldr (\c s -> s + chkEnd c `minusPtr` chkBegin c) 0
+chunksLength = foldl' (\s c -> s + chkEnd c `minusPtr` chkBegin c) 0
 {-# INLINE chunksLength #-}
 
 catChunks :: [Chunk] -> IO ByteString
