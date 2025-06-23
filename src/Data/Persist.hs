@@ -69,7 +69,11 @@ import Data.Proxy
 import Data.Sequence (Seq)
 import Data.Set (Set)
 import Data.Text (Text)
+#ifdef UNALIGNED_MEMORY
 import Data.Word (Word8, Word16, Word32, Word64, byteSwap16, byteSwap32, byteSwap64)
+#else
+import Data.Word (Word8, Word16, Word32, Word64)
+#endif
 import Foreign (Ptr, Storable(..), plusPtr, minusPtr, castPtr, withForeignPtr)
 import Foreign.Marshal.Utils (copyBytes)
 import GHC.Base (unsafeChr, ord)
