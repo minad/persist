@@ -4,6 +4,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE FlexibleContexts  #-}
@@ -11,6 +12,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -25,6 +27,13 @@ module Data.Persist (
     , HostEndian
     , BigEndian(..)
     , LittleEndian(..)
+
+    -- * Helpers for writing Persist instances
+    , HasEndianness(..)
+    , ReinterpretAs(..)
+    , SerializeAs(..)
+    , ViaReinterpretAs(..)
+    , ViaSerializeAs(..)
 
     -- * Serialization
     , encode
@@ -477,232 +486,190 @@ instance Persist () where
   get = pure ()
   {-# INLINE get #-}
 
-instance Persist Word8 where
+class HasEndianness a where
+  unsafeGetLE :: Get a
+  unsafePutLE :: a -> Put ()
+  unsafeGetBE :: Get a
+  unsafePutBE :: a -> Put ()
+  endiannessSize :: Int
+
+instance HasEndianness Word8 where
+  unsafeGetLE = unsafeGetByte
+  unsafeGetBE = unsafeGetByte
+  unsafePutLE = unsafePutByte
+  unsafePutBE = unsafePutByte
+  endiannessSize = 1
+
+instance HasEndianness Word16 where
+  unsafeGetLE = unsafeGet16LE
+  {-# INLINE unsafeGetLE #-}
+  unsafeGetBE = unsafeGet16BE
+  {-# INLINE unsafeGetBE #-}
+  unsafePutLE = unsafePut16LE
+  {-# INLINE unsafePutLE #-}
+  unsafePutBE = unsafePut16BE
+  {-# INLINE unsafePutBE #-}
+  endiannessSize = 2
+  {-# INLINE endiannessSize #-}
+
+instance HasEndianness Word32 where
+  unsafeGetLE = unsafeGet32LE
+  {-# INLINE unsafeGetLE #-}
+  unsafeGetBE = unsafeGet32BE
+  {-# INLINE unsafeGetBE #-}
+  unsafePutLE = unsafePut32LE
+  {-# INLINE unsafePutLE #-}
+  unsafePutBE = unsafePut32BE
+  {-# INLINE unsafePutBE #-}
+  endiannessSize = 4
+  {-# INLINE endiannessSize #-}
+
+instance HasEndianness Word64 where
+  unsafeGetLE = unsafeGet64LE
+  {-# INLINE unsafeGetLE #-}
+  unsafeGetBE = unsafeGet64BE
+  {-# INLINE unsafeGetBE #-}
+  unsafePutLE = unsafePut64LE
+  {-# INLINE unsafePutLE #-}
+  unsafePutBE = unsafePut64BE
+  {-# INLINE unsafePutBE #-}
+  endiannessSize = 8
+  {-# INLINE endiannessSize #-}
+
+instance (HasEndianness a) => Persist (LittleEndian a) where
   put x = do
-    grow 1
-    unsafePutByte x
+    grow (fromIntegral $ endiannessSize @a)
+    unsafePut x
+   where
+    unsafePut = unsafePutLE . unLE
   {-# INLINE put #-}
 
   get = do
-    ensure 1
-    unsafeGetByte
+    ensure (fromIntegral $ endiannessSize @a)
+    unsafeGet
+   where
+    unsafeGet = LittleEndian <$!> unsafeGetLE
   {-# INLINE get #-}
 
-instance Persist (LittleEndian Word16) where
+instance (HasEndianness a) => Persist (BigEndian a) where
   put x = do
-    grow 2
-    unsafePut16LE $ unLE x
+    grow (fromIntegral $ endiannessSize @a)
+    unsafePut x
+   where
+    unsafePut = unsafePutBE . unBE
   {-# INLINE put #-}
 
   get = do
-    ensure 2
-    LittleEndian <$!> unsafeGet16LE
+    ensure (fromIntegral $ endiannessSize @a)
+    unsafeGet
+   where
+    unsafeGet = BigEndian <$!> unsafeGetBE
   {-# INLINE get #-}
 
-instance Persist (BigEndian Word16) where
-  put x = do
-    grow 2
-    unsafePut16BE $ unBE x
+deriving via (LittleEndian Word8) instance Persist Word8
+deriving via (LittleEndian Word16) instance Persist Word16
+deriving via (LittleEndian Word32) instance Persist Word32
+deriving via (LittleEndian Word64) instance Persist Word64
+
+class SerializeAs a where
+  type SerializeTarget a
+  castPut :: a -> SerializeTarget a
+  castGet :: SerializeTarget a -> a
+
+instance SerializeAs Int8 where
+  type SerializeTarget Int8 = Word8
+  castPut = fromIntegral
+  castGet = fromIntegral
+
+instance SerializeAs Int16 where
+  type SerializeTarget Int16 = Word16
+  castPut = fromIntegral
+  castGet = fromIntegral
+
+instance SerializeAs Int32 where
+  type SerializeTarget Int32 = Word32
+  castPut = fromIntegral
+  castGet = fromIntegral
+
+instance SerializeAs Int64 where
+  type SerializeTarget Int64 = Word64
+  castPut = fromIntegral
+  castGet = fromIntegral
+
+newtype ViaSerializeAs a = MkViaSerializeAs a
+  deriving (Eq, Ord, Show)
+
+instance (SerializeAs a, HasEndianness (SerializeTarget a)) => HasEndianness (ViaSerializeAs a) where
+  endiannessSize = endiannessSize @(SerializeTarget a)
+  {-# INLINE endiannessSize #-}
+  unsafeGetBE = MkViaSerializeAs . castGet <$!> unsafeGetBE
+  {-# INLINE unsafeGetBE #-}
+  unsafeGetLE = MkViaSerializeAs . castGet <$!> unsafeGetLE
+  {-# INLINE unsafeGetLE #-}
+  unsafePutBE (MkViaSerializeAs x) = unsafePutBE . castPut $! x
+  {-# INLINE unsafePutBE #-}
+  unsafePutLE (MkViaSerializeAs x) = unsafePutLE . castPut $! x
+  {-# INLINE unsafePutLE #-}
+
+deriving via (ViaSerializeAs Int8) instance HasEndianness Int8
+deriving via (ViaSerializeAs Int16) instance HasEndianness Int16
+deriving via (ViaSerializeAs Int32) instance HasEndianness Int32
+deriving via (ViaSerializeAs Int64) instance HasEndianness Int64
+
+deriving via (LittleEndian Int8) instance Persist Int8
+deriving via (LittleEndian Int16) instance Persist Int16
+deriving via (LittleEndian Int32) instance Persist Int32
+deriving via (LittleEndian Int64) instance Persist Int64
+
+instance SerializeAs Word where
+  type SerializeTarget Word = Word64
+  castPut = fromIntegral
+  castGet = fromIntegral
+
+instance SerializeAs Int where
+  type SerializeTarget Int = Int64
+  castPut = fromIntegral
+  castGet = fromIntegral
+
+instance (SerializeAs a, Persist (SerializeTarget a)) => Persist (ViaSerializeAs a) where
+  put (MkViaSerializeAs x) = put (castPut x)
   {-# INLINE put #-}
-
-  get = do
-    ensure 2
-    BigEndian <$!> unsafeGet16BE
+  get = MkViaSerializeAs . castGet <$> get
   {-# INLINE get #-}
 
-instance Persist Word16 where
-  put = putLE
-  {-# INLINE put #-}
-  get = getLE
-  {-# INLINE get #-}
+deriving via (ViaSerializeAs Word) instance HasEndianness Word
+deriving via (ViaSerializeAs Int) instance HasEndianness Int
+deriving via (ViaSerializeAs Word) instance Persist Word
+deriving via (ViaSerializeAs Int) instance Persist Int
 
-instance Persist (LittleEndian Word32) where
-  put x = do
-    grow 4
-    unsafePut32LE $ unLE x
-  {-# INLINE put #-}
+class ReinterpretAs a where
+  type ReinterpretTarget a
 
-  get = do
-    ensure 4
-    LittleEndian <$!> unsafeGet32LE
-  {-# INLINE get #-}
+newtype ViaReinterpretAs a = MkViaReinterpretAs a
+  deriving (Eq, Ord, Show)
 
-instance Persist (BigEndian Word32) where
-  put x = do
-    grow 4
-    unsafePut32BE $ unBE x
-  {-# INLINE put #-}
+instance forall a b. (ReinterpretAs a, Storable a, Storable b, HasEndianness b, b ~ ReinterpretTarget a) => HasEndianness (ViaReinterpretAs a) where
+  unsafePutLE (MkViaReinterpretAs x) = reinterpretCastPut x >>= unsafePutLE @b
+  {-# INLINE unsafePutLE #-}
+  unsafePutBE (MkViaReinterpretAs x) = reinterpretCastPut x >>= unsafePutBE @b
+  {-# INLINE unsafePutBE #-}
+  unsafeGetLE = MkViaReinterpretAs <$> (unsafeGetLE @(ReinterpretTarget a) >>= reinterpretCastGet)
+  {-# INLINE unsafeGetLE #-}
+  unsafeGetBE = MkViaReinterpretAs <$> (unsafeGetBE @(ReinterpretTarget a) >>= reinterpretCastGet)
+  {-# INLINE unsafeGetBE #-}
+  endiannessSize = endiannessSize @(ReinterpretTarget a)
 
-  get = do
-    ensure 4
-    BigEndian <$!> unsafeGet32BE
-  {-# INLINE get #-}
+instance ReinterpretAs Double where
+  type ReinterpretTarget Double = Word64
 
-instance Persist Word32 where
-  put = putLE
-  {-# INLINE put #-}
-  get = getLE
-  {-# INLINE get #-}
+instance ReinterpretAs Float where
+  type ReinterpretTarget Float = Word32
 
-instance Persist (LittleEndian Word64) where
-  put x = do
-    grow 8
-    unsafePut64LE $ unLE x
-  {-# INLINE put #-}
+deriving via (ViaReinterpretAs Double) instance HasEndianness Double
+deriving via (ViaReinterpretAs Float) instance HasEndianness Float
 
-  get = do
-    ensure 8
-    LittleEndian <$!> unsafeGet64LE
-  {-# INLINE get #-}
-
-instance Persist (BigEndian Word64) where
-  put x = do
-    grow 8
-    unsafePut64BE $ unBE x
-  {-# INLINE put #-}
-
-  get = do
-    ensure 8
-    BigEndian <$!> unsafeGet64BE
-  {-# INLINE get #-}
-
-instance Persist Word64 where
-  put = putLE
-  {-# INLINE put #-}
-  get = getLE
-  {-# INLINE get #-}
-
-instance Persist Int8 where
-  put = put @Word8 . fromIntegral
-  {-# INLINE put #-}
-  get = fromIntegral <$!> get @Word8
-  {-# INLINE get #-}
-
-instance Persist (LittleEndian Int16) where
-  put = put . fmap (fromIntegral @_ @Word16)
-  {-# INLINE put #-}
-  get = fmap (fromIntegral @Word16) <$!> get
-  {-# INLINE get #-}
-
-instance Persist (BigEndian Int16) where
-  put = put . fmap (fromIntegral @_ @Word16)
-  {-# INLINE put #-}
-  get = fmap (fromIntegral @Word16) <$!> get
-  {-# INLINE get #-}
-
-instance Persist Int16 where
-  put = putLE
-  {-# INLINE put #-}
-  get = getLE
-  {-# INLINE get #-}
-
-instance Persist (LittleEndian Int32) where
-  put = put . fmap (fromIntegral @_ @Word32)
-  {-# INLINE put #-}
-  get = fmap (fromIntegral @Word32) <$!> get
-  {-# INLINE get #-}
-
-instance Persist (BigEndian Int32) where
-  put = put . fmap (fromIntegral @_ @Word32)
-  {-# INLINE put #-}
-  get = fmap (fromIntegral @Word32) <$!> get
-  {-# INLINE get #-}
-
-instance Persist Int32 where
-  put = putLE
-  {-# INLINE put #-}
-  get = getLE
-  {-# INLINE get #-}
-
-instance Persist (LittleEndian Int64) where
-  put = put . fmap (fromIntegral @_ @Word64)
-  {-# INLINE put #-}
-  get = fmap (fromIntegral @Word64) <$!> get
-  {-# INLINE get #-}
-
-instance Persist (BigEndian Int64) where
-  put = put . fmap (fromIntegral @_ @Word64)
-  {-# INLINE put #-}
-  get = fmap (fromIntegral @Word64) <$!> get
-  {-# INLINE get #-}
-
-instance Persist Int64 where
-  put = putLE
-  {-# INLINE put #-}
-  get = getLE
-  {-# INLINE get #-}
-
-instance Persist (LittleEndian Double) where
-  put x = reinterpretCastPut (unLE x) >>= putLE @Word64
-  {-# INLINE put #-}
-  get = getLE @Word64 >>= fmap LittleEndian . reinterpretCastGet
-  {-# INLINE get #-}
-
-instance Persist (BigEndian Double) where
-  put x = reinterpretCastPut (unBE x) >>= putBE @Word64
-  {-# INLINE put #-}
-  get = getBE @Word64 >>= fmap BigEndian . reinterpretCastGet
-  {-# INLINE get #-}
-
-instance Persist Double where
-  put = putLE
-  {-# INLINE put #-}
-  get = getLE
-  {-# INLINE get #-}
-
-instance Persist (LittleEndian Float) where
-  put x = reinterpretCastPut (unLE x) >>= putLE @Word32
-  {-# INLINE put #-}
-  get = getLE @Word32 >>= fmap LittleEndian . reinterpretCastGet
-  {-# INLINE get #-}
-
-instance Persist (BigEndian Float) where
-  put x = reinterpretCastPut (unBE x) >>= putBE @Word32
-  {-# INLINE put #-}
-  get = getBE @Word32 >>= fmap BigEndian . reinterpretCastGet
-  {-# INLINE get #-}
-
-instance Persist Float where
-  put = putLE
-  {-# INLINE put #-}
-  get = getLE
-  {-# INLINE get #-}
-
-instance Persist (LittleEndian Word) where
-  put = put . fmap (fromIntegral @_ @Word64)
-  {-# INLINE put #-}
-  get = fmap (fromIntegral @Word64) <$!> get
-  {-# INLINE get #-}
-
-instance Persist (BigEndian Word) where
-  put = put . fmap (fromIntegral @_ @Word64)
-  {-# INLINE put #-}
-  get = fmap (fromIntegral @Word64) <$!> get
-  {-# INLINE get #-}
-
-instance Persist Word where
-  put = putLE
-  {-# INLINE put #-}
-  get = getLE
-  {-# INLINE get #-}
-
-instance Persist (LittleEndian Int) where
-  put = put . fmap (fromIntegral @_ @Int64)
-  {-# INLINE put #-}
-  get = fmap (fromIntegral @Int64) <$!> get
-  {-# INLINE get #-}
-
-instance Persist (BigEndian Int) where
-  put = put . fmap (fromIntegral @_ @Int64)
-  {-# INLINE put #-}
-  get = fmap (fromIntegral @Int64) <$!> get
-  {-# INLINE get #-}
-
-instance Persist Int where
-  put = putLE
-  {-# INLINE put #-}
-  get = getLE
-  {-# INLINE get #-}
+deriving via (LittleEndian Double) instance Persist Double
+deriving via (LittleEndian Float) instance Persist Float
 
 instance Persist Integer where
   put n = do
