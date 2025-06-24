@@ -63,7 +63,7 @@ module Data.Persist (
     , putBE
 ) where
 
-import Control.Monad ((<$!>), when)
+import Control.Monad ((<$!>), forM_, when)
 import Data.Bits (Bits (..))
 import Data.ByteString (ByteString)
 import Data.Int (Int8, Int16, Int32, Int64)
@@ -349,6 +349,14 @@ class Persist t where
   -- | Decode a value in the Get monad
   get :: Get t
 
+  -- | Encode a value without checking for sufficient size.
+  unsafePut :: t -> Put()
+  unsafePut = put
+
+  -- | Decode a value without checking for sufficient size.
+  unsafeGet :: Get t
+  unsafeGet = get
+
   default put :: (Generic t, GPersistPut (Rep t)) => t -> Put ()
   put = gput . from
 
@@ -538,33 +546,37 @@ instance HasEndianness Word64 where
 
 instance (HasEndianness a) => Persist (LittleEndian a) where
   put x = do
-    grow (fromIntegral $ endiannessSize @a)
+    grow (endiannessSize @a)
     unsafePut x
-   where
-    unsafePut = unsafePutLE . unLE
   {-# INLINE put #-}
 
+  unsafePut = unsafePutLE . unLE
+  {-# INLINE unsafePut #-}
+
   get = do
-    ensure (fromIntegral $ endiannessSize @a)
+    ensure (endiannessSize @a)
     unsafeGet
-   where
-    unsafeGet = LittleEndian <$!> unsafeGetLE
   {-# INLINE get #-}
+
+  unsafeGet = LittleEndian <$!> unsafeGetLE
+  {-# INLINE unsafeGet #-}
 
 instance (HasEndianness a) => Persist (BigEndian a) where
   put x = do
-    grow (fromIntegral $ endiannessSize @a)
+    grow (endiannessSize @a)
     unsafePut x
-   where
-    unsafePut = unsafePutBE . unBE
   {-# INLINE put #-}
 
+  unsafePut = unsafePutBE . unBE
+  {-# INLINE unsafePut #-}
+
   get = do
-    ensure (fromIntegral $ endiannessSize @a)
+    ensure (endiannessSize @a)
     unsafeGet
-   where
-    unsafeGet = BigEndian <$!> unsafeGetBE
   {-# INLINE get #-}
+
+  unsafeGet = BigEndian <$!> unsafeGetBE
+  {-# INLINE unsafeGet #-}
 
 deriving via (LittleEndian Word8) instance Persist Word8
 deriving via (LittleEndian Word16) instance Persist Word16
@@ -634,8 +646,12 @@ instance SerializeAs Int where
 instance (SerializeAs a, Persist (SerializeTarget a)) => Persist (ViaSerializeAs a) where
   put (MkViaSerializeAs x) = put (castPut x)
   {-# INLINE put #-}
+  unsafePut (MkViaSerializeAs x) = unsafePut (castPut x)
+  {-# INLINE unsafePut #-}
   get = MkViaSerializeAs . castGet <$> get
   {-# INLINE get #-}
+  unsafeGet = MkViaSerializeAs . castGet <$> unsafeGet
+  {-# INLINE unsafeGet #-}
 
 deriving via (ViaSerializeAs Word) instance HasEndianness Word
 deriving via (ViaSerializeAs Int) instance HasEndianness Int
@@ -657,7 +673,7 @@ instance forall a b. (ReinterpretAs a, Storable a, Storable b, HasEndianness b, 
   {-# INLINE unsafeGetLE #-}
   unsafeGetBE = MkViaReinterpretAs <$> (unsafeGetBE @(ReinterpretTarget a) >>= reinterpretCastGet)
   {-# INLINE unsafeGetBE #-}
-  endiannessSize = endiannessSize @(ReinterpretTarget a)
+  endiannessSize = endiannessSize @b
 
 instance ReinterpretAs Double where
   type ReinterpretTarget Double = Word64
@@ -703,17 +719,26 @@ instance Persist Natural where
 
 -- Char is serialized as UTF-8
 instance Persist Char where
-  put a | c <= 0x7f     = put (fromIntegral c :: Word8)
-        | c <= 0x7ff    = do put (0xc0 .|. y)
-                             put (0x80 .|. z)
-        | c <= 0xffff   = do put (0xe0 .|. x)
-                             put (0x80 .|. y)
-                             put (0x80 .|. z)
-        | c <= 0x10ffff = do put (0xf0 .|. w)
-                             put (0x80 .|. x)
-                             put (0x80 .|. y)
-                             put (0x80 .|. z)
+  put a | c <= 0x7f = grow 1 >> unsafePut a
+        | c <= 0x7ff = grow 2 >> unsafePut a
+        | c <= 0xffff = grow 3 >> unsafePut a
+        | c <= 0x10ffff = grow 4 >> unsafePut a
         | otherwise = error "Not a valid Unicode code point"
+    where
+      c = ord a
+  {-# INLINE put #-}
+
+  unsafePut a | c <= 0x7f     = unsafePut (fromIntegral c :: Word8)
+              | c <= 0x7ff    = do unsafePut (0xc0 .|. y)
+                                   unsafePut (0x80 .|. z)
+              | c <= 0xffff   = do unsafePut (0xe0 .|. x)
+                                   unsafePut (0x80 .|. y)
+                                   unsafePut (0x80 .|. z)
+              | c <= 0x10ffff = do unsafePut (0xf0 .|. w)
+                                   unsafePut (0x80 .|. x)
+                                   unsafePut (0x80 .|. y)
+                                   unsafePut (0x80 .|. z)
+              | otherwise = error "Not a valid Unicode code point"
     where
       c = ord a
       z, y, x, w :: Word8
@@ -721,7 +746,7 @@ instance Persist Char where
       y = fromIntegral (unsafeShiftR c 6  .&. 0x3f)
       x = fromIntegral (unsafeShiftR c 12 .&. 0x3f)
       w = fromIntegral (unsafeShiftR c 18 .&. 0x7)
-  {-# INLINE put #-}
+  {-# INLINE unsafePut #-}
 
   get = do
     let byte = fromIntegral <$!> get @Word8
@@ -800,19 +825,43 @@ instance Persist a => Persist [a] where
 
 instance Persist ByteString where
   put s = do
-    put $ B.length s
-    putByteString s
+    let lengthSize = fromIntegral (endiannessSize @Int)
+    grow (B.length s + lengthSize)
+    unsafePut s
+  {-# INLINE put #-}
+
+  unsafePut s = do
+    unsafePut $ B.length s
+    unsafePutByteString s
+  {-# INLINE unsafePut #-}
+
   get = get >>= getByteString
+  {-# INLINE get #-}
 
 instance Persist L.ByteString where
-  put = put . L.toStrict
+  put s = do
+    let lengthSize = fromIntegral (endiannessSize @Int64)
+    grow (fromIntegral $ L.length s + lengthSize)
+    unsafePut s
+  {-# INLINE put #-}
+
+  unsafePut s = do
+    unsafePut $ L.length s
+    forM_ (L.toChunks s) unsafePutByteString
+  {-# INLINE unsafePut #-}
+
   get = L.fromStrict <$!> get
+  {-# INLINE get #-}
 
 instance Persist S.ShortByteString where
   put s = do
+    let lengthSize = fromIntegral (endiannessSize @Int)
+    grow (S.length s + lengthSize)
+    unsafePut s
+
+  unsafePut s = do
     let n = S.length s
-    put n
-    grow n
+    unsafePut n
     Put $ \_ p -> do
       S.copyToPtr s 0 p n
       pure $! p `plusPtr` n :!: ()
@@ -997,8 +1046,12 @@ runPut = snd . evalPut
 {-# INLINE runPut #-}
 
 putByteString :: ByteString -> Put ()
-putByteString (B.PS b o n) = do
-  grow n
+putByteString bs = do
+  grow (B.length bs)
+  unsafePutByteString bs
+
+unsafePutByteString :: ByteString -> Put ()
+unsafePutByteString (B.PS b o n) = do
   Put $ \_ p -> do
     withForeignPtr b $ \q -> copyBytes p (q `plusPtr` o) n
     pure $! p `plusPtr` n :!: ()
