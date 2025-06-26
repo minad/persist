@@ -11,6 +11,8 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -391,12 +393,12 @@ putBE :: Persist (BigEndian a) => a -> Put ()
 putBE = put . BigEndian
 {-# INLINE putBE #-}
 
-getLE :: Persist (LittleEndian a) => Get a
-getLE = unLE <$!> get
+getLE :: forall a. Persist (LittleEndian a) => Get a
+getLE = (.unLE) <$!> get @(LittleEndian a)
 {-# INLINE getLE #-}
 
-getBE :: Persist (BigEndian a) => Get a
-getBE = unBE <$!> get
+getBE :: forall a. Persist (BigEndian a) => Get a
+getBE = (.unBE) <$!> get @(BigEndian a)
 {-# INLINE getBE #-}
 
 unsafePutByte :: Integral a => a -> Put ()
@@ -490,11 +492,11 @@ reinterpretCast p x = do
 {-# INLINE reinterpretCast #-}
 
 reinterpretCastPut :: (Storable a, Storable b) => a -> Put b
-reinterpretCastPut x = Put $ \e p -> (p :!:) <$!> reinterpretCast (peTmp e) x
+reinterpretCastPut x = Put $ \e p -> (p :!:) <$!> reinterpretCast e.tmp x
 {-# INLINE reinterpretCastPut #-}
 
 reinterpretCastGet :: (Storable a, Storable b) => a -> Get b
-reinterpretCastGet x = Get $ \e p -> (p :!:) <$!> reinterpretCast (geTmp e) x
+reinterpretCastGet x = Get $ \e p -> (p :!:) <$!> reinterpretCast e.tmp x
 {-# INLINE reinterpretCastGet #-}
 
 -- The () type need never be written to disk: values of singleton type
@@ -561,7 +563,7 @@ instance (HasEndianness a) => Persist (LittleEndian a) where
     unsafePut x
   {-# INLINE put #-}
 
-  unsafePut = unsafePutLE . unLE
+  unsafePut = unsafePutLE . (.unLE)
   {-# INLINE unsafePut #-}
 
   get = do
@@ -578,7 +580,7 @@ instance (HasEndianness a) => Persist (BigEndian a) where
     unsafePut x
   {-# INLINE put #-}
 
-  unsafePut = unsafePutBE . unBE
+  unsafePut = unsafePutBE . (.unBE)
   {-# INLINE unsafePut #-}
 
   get = do
@@ -1028,7 +1030,7 @@ skip n = do
 -- | Get the number of remaining unparsed bytes.  Useful for checking whether
 -- all input has been consumed.
 remaining :: Get Int
-remaining = Get $ \e p -> pure $! p :!: geEnd e `minusPtr` p
+remaining = Get $ \e p -> pure $! p :!: e.end `minusPtr` p
 {-# INLINE remaining #-}
 
 -- -- | Succeed if end of input reached.
@@ -1042,7 +1044,7 @@ eof = do
 getBytes :: Int -> Get ByteString
 getBytes n = do
   ensure n
-  Get $ \e p -> pure $! p `plusPtr` n :!: B.PS (geBuf e) (p `minusPtr` geBegin e) n
+  Get $ \e p -> pure $! p `plusPtr` n :!: B.PS e.buf (p `minusPtr` e.begin) n
 {-# INLINE getBytes #-}
 
 -- | An efficient 'get' method for strict ByteStrings. Fails if fewer
@@ -1085,25 +1087,25 @@ reserveSize = do
   sizeSize = fromIntegral $ endiannessSize @a
   doWrite = Put $ \e p -> do
     let p' = p `plusPtr` sizeSize
-    (c:|_) <- readIORef (peChks e)
+    (c:|_) <- readIORef e.chunks
     pure $! p' :!: PutSize
-      { psSizePtr = p
-      , psSizeStart = p'
-      , psSizeChunkStart = chkBegin c
+      { sizePtr = p
+      , sizeStart = p'
+      , chunkStart = c.begin
       }
 
 -- | Backpatch a computed length value, excluding the bytes for the length
 --   itself.
 resolveSizeExclusive :: forall a. (Integral a, HasEndianness a) => (a -> Put ()) -> PutSize a -> Put ()
 resolveSizeExclusive putter PutSize{..} = Put $ \e p -> do
-  writeSize <- computeSize e psSizeChunkStart psSizeStart p
-  _ <- unPut (putter writeSize) e psSizePtr
+  writeSize <- computeSize e chunkStart sizeStart p
+  _ <- (putter writeSize).unPut e sizePtr
   pure $ p :!: ()
 
 resolveSizeInclusive :: forall a. (Integral a, HasEndianness a) => (a -> Put ()) -> PutSize a -> Put ()
 resolveSizeInclusive putter PutSize{..} = Put $ \e p -> do
-  writeSize <- computeSize e psSizeChunkStart psSizePtr p
-  _ <- unPut (putter writeSize) e psSizePtr
+  writeSize <- computeSize e chunkStart sizePtr p
+  _ <- (putter writeSize).unPut e sizePtr
   pure $ p :!: ()
 
 computeSize ::
@@ -1114,17 +1116,17 @@ computeSize ::
   Ptr Word8 ->
   IO a
 computeSize env chunkStartPtr basePtr finalPtr = do
-  (chunk :| chunks) <- readIORef (peChks env)
-  if chunkStartPtr == chkBegin chunk
+  (chunk :| chunks) <- readIORef env.chunks
+  if chunkStartPtr == chunk.begin
     then pure . fromIntegral $! finalPtr `minusPtr` basePtr
-    else pure $ loop chunks (finalPtr `minusPtr` chkBegin chunk)
+    else pure $ loop chunks (finalPtr `minusPtr` chunk.begin)
  where
   loop :: [Chunk] -> Int -> a
   loop [] !_acc = throw PutSizeMissingStartChunk
-  loop (chunk : _) !acc | chkBegin chunk == chunkStartPtr =
-    fromIntegral $ acc + (chkEnd chunk `minusPtr` basePtr)
+  loop (chunk : _) !acc | chunk.begin == chunkStartPtr =
+    fromIntegral $ acc + (chunk.end `minusPtr` basePtr)
   loop (chunk : rest) !acc =
-    loop rest (acc + (chkEnd chunk `minusPtr` chkBegin chunk))
+    loop rest (acc + (chunk.end `minusPtr` chunk.begin))
 
 resolveSizeExclusiveBE :: (Integral a, HasEndianness a) => PutSize a -> Put ()
 resolveSizeExclusiveBE = resolveSizeExclusive unsafePutBE
