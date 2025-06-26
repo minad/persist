@@ -11,6 +11,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
@@ -62,11 +63,20 @@ module Data.Persist (
     , putHE
     , putLE
     , putBE
+
+    -- * Size Reserve/Resolve
+    , reserveSize
+    , resolveSizeExclusiveBE
+    , resolveSizeExclusiveLE
+    , resolveSizeInclusiveBE
+    , resolveSizeInclusiveLE
 ) where
 
+import Control.Exception (throw)
 import Control.Monad ((<$!>), forM_, when)
 import Data.Bits (Bits (..))
 import Data.ByteString (ByteString)
+import Data.IORef (readIORef)
 import Data.Int (Int8, Int16, Int32, Int64)
 import Data.IntMap (IntMap)
 import Data.IntSet (IntSet)
@@ -1064,3 +1074,66 @@ unsafePutByteString (B.PS b o n) = do
     withForeignPtr b $ \q -> copyBytes p (q `plusPtr` o) n
     pure $! p `plusPtr` n :!: ()
 {-# INLINE putByteString #-}
+
+-- | Reserve a length value that can be filled in later. The length
+--   value itself must have a fixed size.
+reserveSize :: forall a. HasEndianness a => Put (PutSize a)
+reserveSize = do
+  grow sizeSize
+  doWrite
+ where
+  sizeSize = fromIntegral $ endiannessSize @a
+  doWrite = Put $ \e p -> do
+    let p' = p `plusPtr` sizeSize
+    (c:|_) <- readIORef (peChks e)
+    pure $! p' :!: PutSize
+      { psSizePtr = p
+      , psSizeStart = p'
+      , psSizeChunkStart = chkBegin c
+      }
+
+-- | Backpatch a computed length value, excluding the bytes for the length
+--   itself.
+resolveSizeExclusive :: forall a. (Integral a, HasEndianness a) => (a -> Put ()) -> PutSize a -> Put ()
+resolveSizeExclusive putter PutSize{..} = Put $ \e p -> do
+  writeSize <- computeSize e psSizeChunkStart psSizeStart p
+  _ <- unPut (putter writeSize) e psSizePtr
+  pure $ p :!: ()
+
+resolveSizeInclusive :: forall a. (Integral a, HasEndianness a) => (a -> Put ()) -> PutSize a -> Put ()
+resolveSizeInclusive putter PutSize{..} = Put $ \e p -> do
+  writeSize <- computeSize e psSizeChunkStart psSizePtr p
+  _ <- unPut (putter writeSize) e psSizePtr
+  pure $ p :!: ()
+
+computeSize ::
+  forall a. (Integral a, HasEndianness a) =>
+  PutEnv ->
+  Ptr Word8 ->
+  Ptr Word8 ->
+  Ptr Word8 ->
+  IO a
+computeSize env chunkStartPtr basePtr finalPtr = do
+  (chunk :| chunks) <- readIORef (peChks env)
+  if chunkStartPtr == chkBegin chunk
+    then pure . fromIntegral $! finalPtr `minusPtr` basePtr
+    else pure $ loop chunks (finalPtr `minusPtr` chkBegin chunk)
+ where
+  loop :: [Chunk] -> Int -> a
+  loop [] !_acc = throw PutSizeMissingStartChunk
+  loop (chunk : _) !acc | chkBegin chunk == chunkStartPtr =
+    fromIntegral $ acc + (chkEnd chunk `minusPtr` basePtr)
+  loop (chunk : rest) !acc =
+    loop rest (acc + (chkEnd chunk `minusPtr` chkBegin chunk))
+
+resolveSizeExclusiveBE :: (Integral a, HasEndianness a) => PutSize a -> Put ()
+resolveSizeExclusiveBE = resolveSizeExclusive unsafePutBE
+
+resolveSizeExclusiveLE :: (Integral a, HasEndianness a) => PutSize a -> Put ()
+resolveSizeExclusiveLE = resolveSizeExclusive unsafePutLE
+
+resolveSizeInclusiveBE :: (Integral a, HasEndianness a) => PutSize a -> Put ()
+resolveSizeInclusiveBE = resolveSizeInclusive unsafePutBE
+
+resolveSizeInclusiveLE :: (Integral a, HasEndianness a) => PutSize a -> Put ()
+resolveSizeInclusiveLE = resolveSizeInclusive unsafePutLE

@@ -26,10 +26,14 @@ module Data.Persist.Internal (
     -- * The Put type
     , Put(..)
     , PutEnv(..)
+    , PutException(..)
     , Chunk(..)
     , evalPut
     , evalPutIO
     , grow
+
+    -- * Size reservations
+    , PutSize(..)
 ) where
 
 import Control.Exception
@@ -102,6 +106,12 @@ data GetException
   deriving (Eq, Show)
 
 instance Exception GetException
+
+data PutException =
+  PutSizeMissingStartChunk
+  deriving (Eq, Show)
+
+instance Exception PutException
 
 instance Fail.MonadFail Get where
   fail msg = failGet GenericGetException ("Failed reading: " <> msg)
@@ -178,6 +188,12 @@ instance Monad Put where
     p' :!: x <- unPut m e p
     unPut (f x) e p'
   {-# INLINE (>>=) #-}
+
+data PutSize a = PutSize
+  { psSizePtr :: !(Ptr Word8)
+  , psSizeStart :: !(Ptr Word8)
+  , psSizeChunkStart :: !(Ptr Word8)
+  }
 
 minChunkSize :: Int
 minChunkSize = 0x10000
