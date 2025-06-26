@@ -21,6 +21,7 @@ module Data.Persist.Internal (
     , failGet
     , runGet
     , runGetIO
+    , unsafeGetPrefix
 
     -- * The Put type
     , Put(..)
@@ -128,6 +129,14 @@ runGet :: Get a -> ByteString -> Either String a
 runGet m s = unsafePerformIO $ catch (Right <$!> runGetIO m s) handler
   where handler (e :: GetException) = pure $ Left $ displayException e
 {-# NOINLINE runGet #-}
+
+unsafeGetPrefix :: Int -> Get a -> Get a
+unsafeGetPrefix prefixLength baseGet = Get $ \env p -> do
+  let p' = p `plusPtr` prefixLength
+      env' = env { geEnd = p' }
+  _ :!: r <- unGet baseGet env' p
+  pure $ p' :!: r
+{-# INLINE unsafeGetPrefix #-}
 
 data Chunk = Chunk
   { chkBegin :: {-#UNPACK#-}!(Ptr Word8)

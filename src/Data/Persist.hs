@@ -48,6 +48,7 @@ module Data.Persist (
     , getByteString
     , remaining
     , eof
+    , getPrefix
     , getHE
     , getLE
     , getBE
@@ -1040,6 +1041,13 @@ getBytes n = do
 getByteString :: Int -> Get ByteString
 getByteString n = B.copy <$!> getBytes n
 {-# INLINE getByteString #-}
+
+-- | An efficient 'get' method to apply a recursive 'get' to a substring of
+-- known length.
+getPrefix :: Int -> Get a -> Get a
+getPrefix prefixLength baseGet = do
+  ensure prefixLength
+  unsafeGetPrefix prefixLength baseGet
 
 runPut :: Put a -> ByteString
 runPut = snd . evalPut
