@@ -10,9 +10,10 @@ author:
   Lennart Kolmodin <kolmodin@dtek.chalmers.se>,
   Galois Inc.,
   Lemmih <lemmih@gmail.com>,
-  Bas van Dijk <v.dijk.bas@gmail.com>
+  Bas van Dijk <v.dijk.bas@gmail.com>,
+  Kyle Butt <kyle@iteratee.net>
 
-maintainer: Daniel Mendler <mail@daniel-mendler.de>
+maintainer: Kyle Butt <kyle@iteratee.net>
 category: Data, Parsing
 stability: provisional
 build-type: Simple
