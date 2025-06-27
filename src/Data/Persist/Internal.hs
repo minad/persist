@@ -3,57 +3,66 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE NoFieldSelectors #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE NoFieldSelectors #-}
 
-module Data.Persist.Internal (
-      (:!:)(..)
+module Data.Persist.Internal
+  ( (:!:) (..)
+
     -- * The Get type
-    , Get(..)
-    , GetEnv(..)
-    , GetException(..)
-    , getOffset
-    , failGet
-    , runGet
-    , runGetIO
-    , unsafeGetPrefix
+  , Get (..)
+  , GetEnv (..)
+  , GetException (..)
+  , getOffset
+  , failGet
+  , runGet
+  , runGetIO
+  , unsafeGetPrefix
 
     -- * The Put type
-    , Put(..)
-    , PutEnv(..)
-    , PutException(..)
-    , Chunk(..)
-    , evalPut
-    , evalPutIO
-    , grow
+  , Put (..)
+  , PutEnv (..)
+  , PutException (..)
+  , Chunk (..)
+  , evalPut
+  , evalPutIO
+  , grow
 
     -- * Size reservations
-    , PutSize(..)
-) where
+  , PutSize (..)
+  ) where
 
 import Control.Exception
 import Control.Monad
+import qualified Control.Monad.Fail as Fail
 import Data.ByteString (ByteString)
+import qualified Data.ByteString.Internal as B
 import Data.Foldable (foldl', foldlM)
 import Data.IORef
-import Data.List.NonEmpty (NonEmpty(..))
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Word
-import Foreign (ForeignPtr, Ptr, plusPtr, minusPtr,
-                withForeignPtr, mallocBytes, free, allocaBytes)
+import Foreign
+  ( ForeignPtr
+  , Ptr
+  , allocaBytes
+  , free
+  , mallocBytes
+  , minusPtr
+  , plusPtr
+  , withForeignPtr
+  )
 import Foreign.Marshal.Utils (copyBytes)
 import System.IO.Unsafe
-import qualified Control.Monad.Fail as Fail
-import qualified Data.ByteString.Internal as B
 
 #include "MachDeps.h"
 
@@ -61,10 +70,10 @@ data a :!: b = !a :!: !b
 infixl 2 :!:
 
 data GetEnv = GetEnv
-  { buf   :: !(ForeignPtr Word8)
-  , begin :: {-#UNPACK#-}!(Ptr Word8)
-  , end   :: {-#UNPACK#-}!(Ptr Word8)
-  , tmp   :: {-#UNPACK#-}!(Ptr Word8)
+  { buf :: !(ForeignPtr Word8)
+  , begin :: {-# UNPACK #-} !(Ptr Word8)
+  , end :: {-# UNPACK #-} !(Ptr Word8)
+  , tmp :: {-# UNPACK #-} !(Ptr Word8)
   }
 
 newtype Get a = Get
@@ -112,8 +121,8 @@ data GetException
 
 instance Exception GetException
 
-data PutException =
-  PutSizeMissingStartChunk
+data PutException
+  = PutSizeMissingStartChunk
   deriving (Eq, Show)
 
 instance Exception PutException
@@ -133,39 +142,41 @@ failGet ctor msg = do
 
 runGetIO :: Get a -> ByteString -> IO a
 runGetIO m s = run
-  where run = withForeignPtr buf $ \p -> allocaBytes 8 $ \t -> do
-          let env = GetEnv { buf, begin = p, end = p `plusPtr` (pos + len), tmp = t }
-          _ :!: r <- m.unGet env (p `plusPtr` pos)
-          pure r
-        (B.PS buf pos len) = s
+ where
+  run = withForeignPtr buf $ \p -> allocaBytes 8 $ \t -> do
+    let env = GetEnv {buf, begin = p, end = p `plusPtr` (pos + len), tmp = t}
+    _ :!: r <- m.unGet env (p `plusPtr` pos)
+    pure r
+  (B.PS buf pos len) = s
 
 -- | Run the Get monad applies a 'get'-based parser on the input ByteString
 runGet :: Get a -> ByteString -> Either String a
 runGet m s = unsafePerformIO $ catch (Right <$!> runGetIO m s) handler
-  where handler (e :: GetException) = pure $ Left $ displayException e
+ where
+  handler (e :: GetException) = pure $ Left $ displayException e
 {-# NOINLINE runGet #-}
 
 unsafeGetPrefix :: Int -> Get a -> Get a
 unsafeGetPrefix prefixLength baseGet = Get $ \env p -> do
   let p' = p `plusPtr` prefixLength
-      env' = (\GetEnv{..} -> GetEnv { end = p', ..}) env
+      env' = (\GetEnv {..} -> GetEnv {end = p', ..}) env
   _ :!: r <- baseGet.unGet env' p
   pure $ p' :!: r
 {-# INLINE unsafeGetPrefix #-}
 
 data Chunk = Chunk
-  { begin :: {-#UNPACK#-}!(Ptr Word8)
-  , end   :: {-#UNPACK#-}!(Ptr Word8)
+  { begin :: {-# UNPACK #-} !(Ptr Word8)
+  , end :: {-# UNPACK #-} !(Ptr Word8)
   }
 
 data PutEnv = PutEnv
   { chunks :: !(IORef (NonEmpty Chunk))
-  , end  :: !(IORef (Ptr Word8))
-  , tmp  :: {-#UNPACK#-}!(Ptr Word8)
+  , end :: !(IORef (Ptr Word8))
+  , tmp :: {-# UNPACK #-} !(Ptr Word8)
   }
 
 newtype Put a = Put
-  { unPut :: PutEnv -> Ptr Word8 -> IO (Ptr Word8 :!: a) }
+  {unPut :: PutEnv -> Ptr Word8 -> IO (Ptr Word8 :!: a)}
 
 instance Functor Put where
   fmap f m = Put $ \e p -> do
@@ -217,18 +228,19 @@ grow n
   | n < 0 = error "grow: negative length"
   | otherwise = Put $ \e p -> do
       end <- readIORef e.end
-      if end `minusPtr` p >= n then
-        pure $! p :!: ()
-      else
-        doGrow e p n
+      if end `minusPtr` p >= n
+        then
+          pure $! p :!: ()
+        else
+          doGrow e p n
 {-# INLINE grow #-}
 
 doGrow :: PutEnv -> Ptr Word8 -> Int -> IO (Ptr Word8 :!: ())
 doGrow e p n = do
   k <- newChunk n
   modifyIORef' e.chunks $ \case
-    (c:|cs) ->
-      let !c' = (\Chunk{..} -> Chunk { end = p, .. }) c
+    (c :| cs) ->
+      let !c' = (\Chunk {..} -> Chunk {end = p, ..}) c
        in k :| c' : cs
   writeIORef e.end $! k.end
   pure $! k.begin :!: ()
@@ -240,24 +252,29 @@ chunksLength = foldl' (\s c -> s + c.end `minusPtr` c.begin) 0
 
 catChunks :: [Chunk] -> IO ByteString
 catChunks chks = B.create (chunksLength chks) $ \p ->
-  void $ foldlM (\q c -> do
-                    let n = c.end `minusPtr` c.begin
-                    copyBytes q c.begin n
-                    free c.begin
-                    pure (q `plusPtr` n)) p $ reverse chks
+  void
+    $ foldlM
+      ( \q c -> do
+          let n = c.end `minusPtr` c.begin
+          copyBytes q c.begin n
+          free c.begin
+          pure (q `plusPtr` n)
+      )
+      p
+    $ reverse chks
 {-# INLINE catChunks #-}
 
 evalPutIO :: Put a -> IO (a, ByteString)
 evalPutIO p = do
   k <- newChunk 0
-  chunks <- newIORef (k:|[])
+  chunks <- newIORef (k :| [])
   curEnd <- newIORef k.end
   p' :!: r <- allocaBytes 8 $ \tmp ->
-    p.unPut PutEnv { chunks, end = curEnd, tmp } k.begin
+    p.unPut PutEnv {chunks, end = curEnd, tmp} k.begin
   cs <- readIORef chunks
   s <- case cs of
-    (x:|xs) ->
-      let !x' = (\Chunk{..} -> Chunk { end = p', .. }) x
+    (x :| xs) ->
+      let !x' = (\Chunk {..} -> Chunk {end = p', ..}) x
        in catChunks $ x' : xs
   pure (r, s)
 

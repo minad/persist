@@ -4,14 +4,13 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE EmptyCase #-}
-{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf #-}
-{-# LANGUAGE NoFieldSelectors #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -20,71 +19,71 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE NoFieldSelectors #-}
 
-module Data.Persist (
-
-    -- * The Persist class
-      Persist(..)
+module Data.Persist
+  ( -- * The Persist class
+    Persist (..)
 
     -- * Endianness
-    , HostEndian
-    , BigEndian(..)
-    , LittleEndian(..)
+  , HostEndian
+  , BigEndian (..)
+  , LittleEndian (..)
 
     -- * Helpers for writing Persist instances
-    , HasEndianness(..)
-    , ReinterpretAs(..)
-    , SerializeAs(..)
-    , ViaReinterpretAs(..)
-    , ViaSerializeAs(..)
+  , HasEndianness (..)
+  , ReinterpretAs (..)
+  , SerializeAs (..)
+  , ViaReinterpretAs (..)
+  , ViaSerializeAs (..)
 
     -- * Serialization
-    , encode
-    , decode
+  , encode
+  , decode
 
     -- * The Get type
-    , Get
-    , runGet
-    , ensure
-    , skip
-    , getBytes
-    , getByteString
-    , remaining
-    , eof
-    , getPrefix
-    , getHE
-    , getLE
-    , getBE
+  , Get
+  , runGet
+  , ensure
+  , skip
+  , getBytes
+  , getByteString
+  , remaining
+  , eof
+  , getPrefix
+  , getHE
+  , getLE
+  , getBE
 
     -- * The Put type
-    , Put
-    , runPut
-    , evalPut
-    , grow
-    , putByteString
-    , putHE
-    , putLE
-    , putBE
+  , Put
+  , runPut
+  , evalPut
+  , grow
+  , putByteString
+  , putHE
+  , putLE
+  , putBE
 
     -- * Size Reserve/Resolve
-    , reserveSize
-    , resolveSizeExclusiveBE
-    , resolveSizeExclusiveLE
-    , resolveSizeInclusiveBE
-    , resolveSizeInclusiveLE
-) where
+  , reserveSize
+  , resolveSizeExclusiveBE
+  , resolveSizeExclusiveLE
+  , resolveSizeInclusiveBE
+  , resolveSizeInclusiveLE
+  ) where
 
 import Control.Exception (throw)
-import Control.Monad ((<$!>), forM_, when)
+import Control.Monad (forM_, when, (<$!>))
 import Data.Bits (Bits (..))
 import Data.ByteString (ByteString)
 import Data.IORef (readIORef)
-import Data.Int (Int8, Int16, Int32, Int64)
+import Data.Int (Int16, Int32, Int64, Int8)
 import Data.IntMap (IntMap)
 import Data.IntSet (IntSet)
 import Data.Kind (Type)
 import Data.List (unfoldr)
-import Data.List.NonEmpty (NonEmpty(..))
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import Data.Persist.Internal
 import Data.Proxy
@@ -96,13 +95,6 @@ import Data.Word (Word8, Word16, Word32, Word64, byteSwap16, byteSwap32, byteSwa
 #else
 import Data.Word (Word8, Word16, Word32, Word64)
 #endif
-import Foreign (Ptr, Storable(..), plusPtr, minusPtr, castPtr, withForeignPtr)
-import Foreign.Marshal.Utils (copyBytes)
-import GHC.Base (unsafeChr, ord)
-import GHC.Exts (IsList(..))
-import GHC.Generics
-import GHC.Real (Ratio(..))
-import GHC.TypeLits (KnownNat, Nat, Natural, type (+), type (<=), natVal)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Internal as B
 import qualified Data.ByteString.Lazy as L
@@ -111,11 +103,18 @@ import qualified Data.ByteString.Short.Internal as S
 import qualified Data.Monoid as M
 import qualified Data.Text.Encoding as TE
 import qualified Data.Tree as T
+import Foreign (Ptr, Storable (..), castPtr, minusPtr, plusPtr, withForeignPtr)
+import Foreign.Marshal.Utils (copyBytes)
+import GHC.Base (ord, unsafeChr)
+import GHC.Exts (IsList (..))
+import GHC.Generics
+import GHC.Real (Ratio (..))
+import GHC.TypeLits (KnownNat, Nat, Natural, natVal, type (+), type (<=))
 
 #include "MachDeps.h"
 
-putHE :: Persist (HostEndian a) => a -> Put ()
-getHE :: Persist (HostEndian a) => Get a
+putHE :: (Persist (HostEndian a)) => a -> Put ()
+getHE :: (Persist (HostEndian a)) => Get a
 {-# INLINE putHE #-}
 {-# INLINE getHE #-}
 
@@ -350,20 +349,21 @@ peek32BE p = fromBE32 <$!> peek (castPtr @_ @Word32 p)
 peek64BE p = fromBE64 <$!> peek (castPtr @_ @Word64 p)
 #endif
 
-newtype BigEndian a = BigEndian { unBE :: a }
+newtype BigEndian a = BigEndian {unBE :: a}
   deriving (Show, Eq, Ord, Functor, Foldable, Traversable, Generic)
 
-newtype LittleEndian a = LittleEndian { unLE :: a }
+newtype LittleEndian a = LittleEndian {unLE :: a}
   deriving (Show, Eq, Ord, Functor, Foldable, Traversable, Generic)
 
 class Persist t where
   -- | Encode a value in the Put monad.
   put :: t -> Put ()
+
   -- | Decode a value in the Get monad
   get :: Get t
 
   -- | Encode a value without checking for sufficient size.
-  unsafePut :: t -> Put()
+  unsafePut :: t -> Put ()
   unsafePut = put
 
   -- | Decode a value without checking for sufficient size.
@@ -377,109 +377,110 @@ class Persist t where
   get = to <$!> gget
 
 -- | Encode a value using binary serialization to a strict ByteString.
-encode :: Persist a => a -> ByteString
+encode :: (Persist a) => a -> ByteString
 encode = runPut . put
 
--- | Decode a value from a strict ByteString, reconstructing the original
--- structure.
-decode :: Persist a => ByteString -> Either String a
+{- | Decode a value from a strict ByteString, reconstructing the original
+structure.
+-}
+decode :: (Persist a) => ByteString -> Either String a
 decode = runGet get
 
-putLE :: Persist (LittleEndian a) => a -> Put ()
+putLE :: (Persist (LittleEndian a)) => a -> Put ()
 putLE = put . LittleEndian
 {-# INLINE putLE #-}
 
-putBE :: Persist (BigEndian a) => a -> Put ()
+putBE :: (Persist (BigEndian a)) => a -> Put ()
 putBE = put . BigEndian
 {-# INLINE putBE #-}
 
-getLE :: forall a. Persist (LittleEndian a) => Get a
+getLE :: forall a. (Persist (LittleEndian a)) => Get a
 getLE = (.unLE) <$!> get @(LittleEndian a)
 {-# INLINE getLE #-}
 
-getBE :: forall a. Persist (BigEndian a) => Get a
+getBE :: forall a. (Persist (BigEndian a)) => Get a
 getBE = (.unBE) <$!> get @(BigEndian a)
 {-# INLINE getBE #-}
 
-unsafePutByte :: Integral a => a -> Put ()
+unsafePutByte :: (Integral a) => a -> Put ()
 unsafePutByte x = Put $ \_ p -> do
   poke p $ fromIntegral x
   pure $! p `plusPtr` 1 :!: ()
 {-# INLINE unsafePutByte #-}
 
-unsafePut16LE :: Integral a => a -> Put ()
+unsafePut16LE :: (Integral a) => a -> Put ()
 unsafePut16LE x = Put $ \_ p -> do
   poke16LE p $ fromIntegral x
   pure $! p `plusPtr` 2 :!: ()
 {-# INLINE unsafePut16LE #-}
 
-unsafePut32LE :: Integral a => a -> Put ()
+unsafePut32LE :: (Integral a) => a -> Put ()
 unsafePut32LE x = Put $ \_ p -> do
   poke32LE p $ fromIntegral x
   pure $! p `plusPtr` 4 :!: ()
 {-# INLINE unsafePut32LE #-}
 
-unsafePut64LE :: Integral a => a -> Put ()
+unsafePut64LE :: (Integral a) => a -> Put ()
 unsafePut64LE x = Put $ \_ p -> do
   poke64LE p $ fromIntegral x
   pure $! p `plusPtr` 8 :!: ()
 {-# INLINE unsafePut64LE #-}
 
-unsafePut16BE :: Integral a => a -> Put ()
+unsafePut16BE :: (Integral a) => a -> Put ()
 unsafePut16BE x = Put $ \_ p -> do
   poke16BE p $ fromIntegral x
   pure $! p `plusPtr` 2 :!: ()
 {-# INLINE unsafePut16BE #-}
 
-unsafePut32BE :: Integral a => a -> Put ()
+unsafePut32BE :: (Integral a) => a -> Put ()
 unsafePut32BE x = Put $ \_ p -> do
   poke32BE p $ fromIntegral x
   pure $! p `plusPtr` 4 :!: ()
 {-# INLINE unsafePut32BE #-}
 
-unsafePut64BE :: Integral a => a -> Put ()
+unsafePut64BE :: (Integral a) => a -> Put ()
 unsafePut64BE x = Put $ \_ p -> do
   poke64BE p $ fromIntegral x
   pure $! p `plusPtr` 8 :!: ()
 {-# INLINE unsafePut64BE #-}
 
-unsafeGetByte :: Num a => Get a
+unsafeGetByte :: (Num a) => Get a
 unsafeGetByte = Get $ \_ p -> do
   x <- peek p
   pure $! p `plusPtr` 1 :!: fromIntegral x
 {-# INLINE unsafeGetByte #-}
 
-unsafeGet16LE :: Num a => Get a
+unsafeGet16LE :: (Num a) => Get a
 unsafeGet16LE = Get $ \_ p -> do
   x <- peek16LE p
   pure $! p `plusPtr` 2 :!: fromIntegral x
 {-# INLINE unsafeGet16LE #-}
 
-unsafeGet32LE :: Num a => Get a
+unsafeGet32LE :: (Num a) => Get a
 unsafeGet32LE = Get $ \_ p -> do
   x <- peek32LE p
   pure $! p `plusPtr` 4 :!: fromIntegral x
 {-# INLINE unsafeGet32LE #-}
 
-unsafeGet64LE :: Num a => Get a
+unsafeGet64LE :: (Num a) => Get a
 unsafeGet64LE = Get $ \_ p -> do
   x <- peek64LE p
   pure $! p `plusPtr` 8 :!: fromIntegral x
 {-# INLINE unsafeGet64LE #-}
 
-unsafeGet16BE :: Num a => Get a
+unsafeGet16BE :: (Num a) => Get a
 unsafeGet16BE = Get $ \_ p -> do
   x <- peek16BE p
   pure $! p `plusPtr` 2 :!: fromIntegral x
 {-# INLINE unsafeGet16BE #-}
 
-unsafeGet32BE :: Num a => Get a
+unsafeGet32BE :: (Num a) => Get a
 unsafeGet32BE = Get $ \_ p -> do
   x <- peek32BE p
   pure $! p `plusPtr` 4 :!: fromIntegral x
 {-# INLINE unsafeGet32BE #-}
 
-unsafeGet64BE :: Num a => Get a
+unsafeGet64BE :: (Num a) => Get a
 unsafeGet64BE = Get $ \_ p -> do
   x <- peek64BE p
   pure $! p `plusPtr` 8 :!: fromIntegral x
@@ -677,7 +678,11 @@ class ReinterpretAs a where
 newtype ViaReinterpretAs a = MkViaReinterpretAs a
   deriving (Eq, Ord, Show)
 
-instance forall a b. (ReinterpretAs a, Storable a, Storable b, HasEndianness b, b ~ ReinterpretTarget a) => HasEndianness (ViaReinterpretAs a) where
+instance
+  forall a b.
+  (ReinterpretAs a, Storable a, Storable b, HasEndianness b, b ~ ReinterpretTarget a) =>
+  HasEndianness (ViaReinterpretAs a)
+  where
   unsafePutLE (MkViaReinterpretAs x) = reinterpretCastPut x >>= unsafePutLE @b
   {-# INLINE unsafePutLE #-}
   unsafePutBE (MkViaReinterpretAs x) = reinterpretCastPut x >>= unsafePutBE @b
@@ -712,14 +717,16 @@ instance Persist Integer where
 
 unroll :: (Integral a, Bits a) => a -> [Word8]
 unroll = unfoldr step
-  where step 0 = Nothing
-        step i = Just (fromIntegral i, i `unsafeShiftR` 8)
+ where
+  step 0 = Nothing
+  step i = Just (fromIntegral i, i `unsafeShiftR` 8)
 
 roll :: (Integral a, Bits a) => [Word8] -> a
 roll = foldr unstep 0
-  where unstep b a = a `unsafeShiftL` 8 .|. fromIntegral b
+ where
+  unstep b a = a `unsafeShiftL` 8 .|. fromIntegral b
 
-instance Persist a => Persist (Ratio a) where
+instance (Persist a) => Persist (Ratio a) where
   put (n :% d) = put n *> put d
   {-# INLINE put #-}
 
@@ -732,58 +739,76 @@ instance Persist Natural where
 
 -- Char is serialized as UTF-8
 instance Persist Char where
-  put a | c <= 0x7f = grow 1 >> unsafePut a
-        | c <= 0x7ff = grow 2 >> unsafePut a
-        | c <= 0xffff = grow 3 >> unsafePut a
-        | c <= 0x10ffff = grow 4 >> unsafePut a
-        | otherwise = error "Not a valid Unicode code point"
-    where
-      c = ord a
+  put a
+    | c <= 0x7f = grow 1 >> unsafePut a
+    | c <= 0x7ff = grow 2 >> unsafePut a
+    | c <= 0xffff = grow 3 >> unsafePut a
+    | c <= 0x10ffff = grow 4 >> unsafePut a
+    | otherwise = error "Not a valid Unicode code point"
+   where
+    c = ord a
   {-# INLINE put #-}
 
-  unsafePut a | c <= 0x7f     = unsafePut (fromIntegral c :: Word8)
-              | c <= 0x7ff    = do unsafePut (0xc0 .|. y)
-                                   unsafePut (0x80 .|. z)
-              | c <= 0xffff   = do unsafePut (0xe0 .|. x)
-                                   unsafePut (0x80 .|. y)
-                                   unsafePut (0x80 .|. z)
-              | c <= 0x10ffff = do unsafePut (0xf0 .|. w)
-                                   unsafePut (0x80 .|. x)
-                                   unsafePut (0x80 .|. y)
-                                   unsafePut (0x80 .|. z)
-              | otherwise = error "Not a valid Unicode code point"
-    where
-      c = ord a
-      z, y, x, w :: Word8
-      z = fromIntegral (c                 .&. 0x3f)
-      y = fromIntegral (unsafeShiftR c 6  .&. 0x3f)
-      x = fromIntegral (unsafeShiftR c 12 .&. 0x3f)
-      w = fromIntegral (unsafeShiftR c 18 .&. 0x7)
+  unsafePut a
+    | c <= 0x7f = unsafePut (fromIntegral c :: Word8)
+    | c <= 0x7ff = do
+        unsafePut (0xc0 .|. y)
+        unsafePut (0x80 .|. z)
+    | c <= 0xffff = do
+        unsafePut (0xe0 .|. x)
+        unsafePut (0x80 .|. y)
+        unsafePut (0x80 .|. z)
+    | c <= 0x10ffff = do
+        unsafePut (0xf0 .|. w)
+        unsafePut (0x80 .|. x)
+        unsafePut (0x80 .|. y)
+        unsafePut (0x80 .|. z)
+    | otherwise = error "Not a valid Unicode code point"
+   where
+    c = ord a
+    z, y, x, w :: Word8
+    z = fromIntegral (c .&. 0x3f)
+    y = fromIntegral (unsafeShiftR c 6 .&. 0x3f)
+    x = fromIntegral (unsafeShiftR c 12 .&. 0x3f)
+    w = fromIntegral (unsafeShiftR c 18 .&. 0x7)
   {-# INLINE unsafePut #-}
 
   get = do
     let byte = fromIntegral <$!> get @Word8
         shiftL6 = flip unsafeShiftL 6
     w <- byte
-    r <- if | w < 0x80  -> pure w
-            | w < 0xe0  -> do
-                x <- xor 0x80 <$!> byte
-                pure $ x .|. shiftL6 (xor 0xc0 w)
-            | w < 0xf0  -> do
-                x <- xor 0x80 <$!> byte
-                y <- xor 0x80 <$!> byte
-                pure $ y .|. shiftL6 (x .|. shiftL6
-                                       (xor 0xe0 w))
-            | otherwise -> do
-                x <- xor 0x80 <$!> byte
-                y <- xor 0x80 <$!> byte
-                z <- xor 0x80 <$!> byte
-                pure $ z .|. shiftL6 (y .|. shiftL6
-                                       (x .|. shiftL6 (xor 0xf0 w)))
-    if r <= 0x10FFFF then
-      pure $ unsafeChr r
-    else
-      failGet CharException "Invalid character"
+    r <-
+      if
+        | w < 0x80 -> pure w
+        | w < 0xe0 -> do
+            x <- xor 0x80 <$!> byte
+            pure $ x .|. shiftL6 (xor 0xc0 w)
+        | w < 0xf0 -> do
+            x <- xor 0x80 <$!> byte
+            y <- xor 0x80 <$!> byte
+            pure $
+              y
+                .|. shiftL6
+                  ( x
+                      .|. shiftL6
+                        (xor 0xe0 w)
+                  )
+        | otherwise -> do
+            x <- xor 0x80 <$!> byte
+            y <- xor 0x80 <$!> byte
+            z <- xor 0x80 <$!> byte
+            pure $
+              z
+                .|. shiftL6
+                  ( y
+                      .|. shiftL6
+                        (x .|. shiftL6 (xor 0xf0 w))
+                  )
+    if r <= 0x10FFFF
+      then
+        pure $ unsafeChr r
+      else
+        failGet CharException "Invalid character"
   {-# INLINE get #-}
 
 instance Persist Text where
@@ -797,44 +822,62 @@ instance Persist Text where
 instance Persist Bool
 instance Persist Ordering
 instance (Persist a) => Persist (Maybe a)
-instance Persist e => Persist (T.Tree e)
+instance (Persist e) => Persist (T.Tree e)
 instance (Persist a, Persist b) => Persist (Either a b)
-instance (Persist a, Persist b) => Persist (a,b)
-instance (Persist a, Persist b, Persist c) => Persist (a,b,c)
-instance (Persist a, Persist b, Persist c, Persist d)
-        => Persist (a,b,c,d)
-instance (Persist a, Persist b, Persist c, Persist d, Persist e)
-        => Persist (a,b,c,d,e)
-instance (Persist a, Persist b, Persist c, Persist d, Persist e
-         , Persist f)
-        => Persist (a,b,c,d,e,f)
-instance (Persist a, Persist b, Persist c, Persist d, Persist e
-         , Persist f, Persist g)
-        => Persist (a,b,c,d,e,f,g)
-instance Persist a => Persist (M.Dual a)
+instance (Persist a, Persist b) => Persist (a, b)
+instance (Persist a, Persist b, Persist c) => Persist (a, b, c)
+instance
+  (Persist a, Persist b, Persist c, Persist d) =>
+  Persist (a, b, c, d)
+instance
+  (Persist a, Persist b, Persist c, Persist d, Persist e) =>
+  Persist (a, b, c, d, e)
+instance
+  ( Persist a
+  , Persist b
+  , Persist c
+  , Persist d
+  , Persist e
+  , Persist f
+  ) =>
+  Persist (a, b, c, d, e, f)
+instance
+  ( Persist a
+  , Persist b
+  , Persist c
+  , Persist d
+  , Persist e
+  , Persist f
+  , Persist g
+  ) =>
+  Persist (a, b, c, d, e, f, g)
+instance (Persist a) => Persist (M.Dual a)
 instance Persist M.All
 instance Persist M.Any
-instance Persist a => Persist (M.Sum a)
-instance Persist a => Persist (M.Product a)
-instance Persist a => Persist (M.First a)
-instance Persist a => Persist (M.Last a)
+instance (Persist a) => Persist (M.Sum a)
+instance (Persist a) => Persist (M.Product a)
+instance (Persist a) => Persist (M.First a)
+instance (Persist a) => Persist (M.Last a)
 
--- | Persist a list in the following format:
---   Word64 (little endian format)
---   element 1
---   ...
---   element n
-instance Persist a => Persist [a] where
-    put l = do
-      put $ length l
-      mapM_ put l
-    {-# INLINE put #-}
+{- | Persist a list in the following format:
+  Word64 (little endian format)
+  element 1
+  ...
+  element n
+-}
+instance (Persist a) => Persist [a] where
+  put l = do
+    put $ length l
+    mapM_ put l
+  {-# INLINE put #-}
 
-    get = go [] =<< get @Word64
-      where go as 0 = pure $! reverse as
-            go as i = do x <- get
-                         x `seq` go (x:as) (i - 1)
-    {-# INLINE get #-}
+  get = go [] =<< get @Word64
+   where
+    go as 0 = pure $! reverse as
+    go as i = do
+      x <- get
+      x `seq` go (x : as) (i - 1)
+  {-# INLINE get #-}
 
 instance Persist ByteString where
   put s = do
@@ -897,19 +940,19 @@ instance Persist IntSet where
   put = put . toList
   get = fromList <$!> get
 
-instance Persist e => Persist (NonEmpty e) where
+instance (Persist e) => Persist (NonEmpty e) where
   put = put . toList
   {-# INLINE put #-}
   get = fromList <$!> get
   {-# INLINE get #-}
 
-instance Persist e => Persist (IntMap e) where
+instance (Persist e) => Persist (IntMap e) where
   put = put . toList
   {-# INLINE put #-}
   get = fromList <$!> get
   {-# INLINE get #-}
 
-instance Persist e => Persist (Seq e) where
+instance (Persist e) => Persist (Seq e) where
   put = put . toList
   {-# INLINE put #-}
   get = fromList <$!> get
@@ -925,19 +968,19 @@ class GPersistPut f where
 class GPersistGet f where
   gget :: Get (f a)
 
-instance GPersistPut f => GPersistPut (M1 i c f) where
+instance (GPersistPut f) => GPersistPut (M1 i c f) where
   gput = gput . unM1
   {-# INLINE gput #-}
 
-instance GPersistGet f => GPersistGet (M1 i c f) where
+instance (GPersistGet f) => GPersistGet (M1 i c f) where
   gget = fmap M1 gget
   {-# INLINE gget #-}
 
-instance Persist a => GPersistPut (K1 i a) where
+instance (Persist a) => GPersistPut (K1 i a) where
   gput = put . unK1
   {-# INLINE gput #-}
 
-instance Persist a => GPersistGet (K1 i a) where
+instance (Persist a) => GPersistGet (K1 i a) where
   gget = fmap K1 get
   {-# INLINE gget #-}
 
@@ -975,25 +1018,29 @@ instance (SumArity (a :+: b) <= 255, GPersistGetSum 0 (a :+: b)) => GPersistGet 
     ggetSum tag (Proxy :: Proxy 0)
   {-# INLINE gget #-}
 
-class KnownNat n => GPersistPutSum (n :: Nat) (f :: Type -> Type) where
+class (KnownNat n) => GPersistPutSum (n :: Nat) (f :: Type -> Type) where
   gputSum :: f p -> Proxy n -> Put ()
 
-class KnownNat n => GPersistGetSum (n :: Nat) (f :: Type -> Type) where
+class (KnownNat n) => GPersistGetSum (n :: Nat) (f :: Type -> Type) where
   ggetSum :: Word8 -> Proxy n -> Get (f p)
 
-instance (GPersistPutSum n a, GPersistPutSum (n + SumArity a) b, KnownNat n)
-         => GPersistPutSum n (a :+: b) where
+instance
+  (GPersistPutSum n a, GPersistPutSum (n + SumArity a) b, KnownNat n) =>
+  GPersistPutSum n (a :+: b)
+  where
   gputSum (L1 l) _ = gputSum l (Proxy :: Proxy n)
   gputSum (R1 r) _ = gputSum r (Proxy :: Proxy (n + SumArity a))
   {-# INLINE gputSum #-}
 
-instance (GPersistGetSum n a, GPersistGetSum (n + SumArity a) b, KnownNat n)
-         => GPersistGetSum n (a :+: b) where
+instance
+  (GPersistGetSum n a, GPersistGetSum (n + SumArity a) b, KnownNat n) =>
+  GPersistGetSum n (a :+: b)
+  where
   ggetSum tag proxyL
     | tag < sizeL = L1 <$!> ggetSum tag proxyL
     | otherwise = R1 <$!> ggetSum tag (Proxy :: Proxy (n + SumArity a))
-    where
-      sizeL = fromInteger (natVal (Proxy :: Proxy (n + SumArity a)))
+   where
+    sizeL = fromInteger (natVal (Proxy :: Proxy (n + SumArity a)))
   {-# INLINE ggetSum #-}
 
 instance (GPersistPut a, KnownNat n) => GPersistPutSum n (C1 c a) where
@@ -1007,8 +1054,8 @@ instance (GPersistGet a, KnownNat n) => GPersistGetSum n (C1 c a) where
     | tag == cur = gget
     | tag > cur = fail "Sum tag invalid"
     | otherwise = fail "Implementation error"
-    where
-      cur = fromInteger (natVal (Proxy :: Proxy n))
+   where
+    cur = fromInteger (natVal (Proxy :: Proxy n))
   {-# INLINE ggetSum #-}
 
 -- | Ensure that @n@ bytes are available. Fails if fewer than @n@ bytes are available.
@@ -1027,8 +1074,9 @@ skip n = do
   Get $ \_ p -> pure $! p `plusPtr` n :!: ()
 {-# INLINE skip #-}
 
--- | Get the number of remaining unparsed bytes.  Useful for checking whether
--- all input has been consumed.
+{- | Get the number of remaining unparsed bytes.  Useful for checking whether
+all input has been consumed.
+-}
 remaining :: Get Int
 remaining = Get $ \e p -> pure $! p :!: e.end `minusPtr` p
 {-# INLINE remaining #-}
@@ -1047,15 +1095,17 @@ getBytes n = do
   Get $ \e p -> pure $! p `plusPtr` n :!: B.PS e.buf (p `minusPtr` e.begin) n
 {-# INLINE getBytes #-}
 
--- | An efficient 'get' method for strict ByteStrings. Fails if fewer
--- than @n@ bytes are left in the input. This function creates a fresh
--- copy of the underlying bytes.
+{- | An efficient 'get' method for strict ByteStrings. Fails if fewer
+than @n@ bytes are left in the input. This function creates a fresh
+copy of the underlying bytes.
+-}
 getByteString :: Int -> Get ByteString
 getByteString n = B.copy <$!> getBytes n
 {-# INLINE getByteString #-}
 
--- | An efficient 'get' method to apply a recursive 'get' to a substring of
--- known length.
+{- | An efficient 'get' method to apply a recursive 'get' to a substring of
+known length.
+-}
 getPrefix :: Int -> Get a -> Get a
 getPrefix prefixLength baseGet = do
   ensure prefixLength
@@ -1077,9 +1127,10 @@ unsafePutByteString (B.PS b o n) = do
     pure $! p `plusPtr` n :!: ()
 {-# INLINE putByteString #-}
 
--- | Reserve a length value that can be filled in later. The length
---   value itself must have a fixed size.
-reserveSize :: forall a. HasEndianness a => Put (PutSize a)
+{- | Reserve a length value that can be filled in later. The length
+  value itself must have a fixed size.
+-}
+reserveSize :: forall a. (HasEndianness a) => Put (PutSize a)
 reserveSize = do
   grow sizeSize
   doWrite
@@ -1087,29 +1138,33 @@ reserveSize = do
   sizeSize = fromIntegral $ endiannessSize @a
   doWrite = Put $ \e p -> do
     let p' = p `plusPtr` sizeSize
-    (c:|_) <- readIORef e.chunks
-    pure $! p' :!: PutSize
-      { sizePtr = p
-      , sizeStart = p'
-      , chunkStart = c.begin
-      }
+    (c :| _) <- readIORef e.chunks
+    pure $!
+      p'
+        :!: PutSize
+          { sizePtr = p
+          , sizeStart = p'
+          , chunkStart = c.begin
+          }
 
--- | Backpatch a computed length value, excluding the bytes for the length
---   itself.
+{- | Backpatch a computed length value, excluding the bytes for the length
+  itself.
+-}
 resolveSizeExclusive :: forall a. (Integral a, HasEndianness a) => (a -> Put ()) -> PutSize a -> Put ()
-resolveSizeExclusive putter PutSize{..} = Put $ \e p -> do
+resolveSizeExclusive putter PutSize {..} = Put $ \e p -> do
   writeSize <- computeSize e chunkStart sizeStart p
   _ <- (putter writeSize).unPut e sizePtr
   pure $ p :!: ()
 
 resolveSizeInclusive :: forall a. (Integral a, HasEndianness a) => (a -> Put ()) -> PutSize a -> Put ()
-resolveSizeInclusive putter PutSize{..} = Put $ \e p -> do
+resolveSizeInclusive putter PutSize {..} = Put $ \e p -> do
   writeSize <- computeSize e chunkStart sizePtr p
   _ <- (putter writeSize).unPut e sizePtr
   pure $ p :!: ()
 
 computeSize ::
-  forall a. (Integral a, HasEndianness a) =>
+  forall a.
+  (Integral a, HasEndianness a) =>
   PutEnv ->
   Ptr Word8 ->
   Ptr Word8 ->
@@ -1123,8 +1178,9 @@ computeSize env chunkStartPtr basePtr finalPtr = do
  where
   loop :: [Chunk] -> Int -> a
   loop [] !_acc = throw PutSizeMissingStartChunk
-  loop (chunk : _) !acc | chunk.begin == chunkStartPtr =
-    fromIntegral $ acc + (chunk.end `minusPtr` basePtr)
+  loop (chunk : _) !acc
+    | chunk.begin == chunkStartPtr =
+        fromIntegral $ acc + (chunk.end `minusPtr` basePtr)
   loop (chunk : rest) !acc =
     loop rest (acc + (chunk.end `minusPtr` chunk.begin))
 
