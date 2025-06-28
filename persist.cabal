@@ -32,7 +32,7 @@ description:
 
 source-repository head
   type: git
-  location: git://github.com/minad/persist
+  location: https://github.com/minad/persist
 
 flag force-unaligned
   manual: True
