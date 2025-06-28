@@ -47,7 +47,11 @@ import Control.Monad
 import qualified Control.Monad.Fail as Fail
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Internal as B
+#if MIN_VERSION_base(4,20,0)
+import Data.Foldable (foldlM)
+#else
 import Data.Foldable (foldl', foldlM)
+#endif
 import Data.IORef
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Word
