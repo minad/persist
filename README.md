@@ -34,49 +34,49 @@ Results that are within 30% of the best result are displayed in **bold**.
 | ---| ---|
 | **persist**   |     **1.0** |
 | **store**     |     **1.1** |
-| **cereal**    |     **1.2** |
-| binary    |     7.2 |
-| serialise |     8.4 |
+| cereal    |     1.4 |
+| binary    |    10.5 |
+| serialise |    20.1 |
 
 #### deserialization (time)/BinTree Int (best first)
 
 | package | performance |
 | ---| ---|
 | **persist**   |     **1.0** |
-| **store**     |     **1.0** |
-| **cereal**    |     **1.2** |
-| binary    |     4.3 |
-| serialise |     5.0 |
+| **store**     |     **1.1** |
+| cereal    |     1.4 |
+| binary    |     5.3 |
+| serialise |    12.1 |
 
 #### deserialization (time)/Cars (best first)
 
 | package | performance |
 | ---| ---|
 | **persist**   |     **1.0** |
-| **store**     |     **1.3** |
+| **store**     |     **1.1** |
 | cereal    |     1.6 |
-| binary    |     8.0 |
-| serialise |     9.9 |
+| binary    |    12.2 |
+| serialise |    26.3 |
 
 #### deserialization (time)/Iris (best first)
 
 | package | performance |
 | ---| ---|
 | **persist**   |     **1.0** |
-| **store**     |     **1.2** |
-| cereal    |     3.0 |
-| serialise |     3.5 |
-| binary    |     7.6 |
+| **store**     |     **1.1** |
+| cereal    |     2.7 |
+| serialise |     7.7 |
+| binary    |    10.4 |
 
 #### deserialization (time)/[Direction] (best first)
 
 | package | performance |
 | ---| ---|
 | **persist**   |     **1.0** |
-| cereal    |     1.3 |
-| store     |     1.5 |
-| binary    |     4.4 |
-| serialise |     6.9 |
+| **store**     |     **1.1** |
+| **cereal**    |     **1.1** |
+| binary    |     5.5 |
+| serialise |    10.8 |
 
 #### serialization (time)/BinTree Direction (best first)
 
@@ -84,46 +84,46 @@ Results that are within 30% of the best result are displayed in **bold**.
 | ---| ---|
 | **persist**   |     **1.0** |
 | **store**     |     **1.1** |
-| cereal    |     8.2 |
-| binary    |    16.1 |
-| serialise |    26.4 |
+| cereal    |     7.9 |
+| binary    |    25.0 |
+| serialise |    45.1 |
 
 #### serialization (time)/BinTree Int (best first)
 
 | package | performance |
 | ---| ---|
-| **store**     |     **1.0** |
 | **persist**   |     **1.0** |
-| cereal    |    10.7 |
-| binary    |    18.3 |
-| serialise |    25.3 |
+| **store**     |     **1.3** |
+| cereal    |     9.8 |
+| binary    |    26.3 |
+| serialise |    35.5 |
 
 #### serialization (time)/Cars (best first)
 
 | package | performance |
 | ---| ---|
 | **store**     |     **1.0** |
-| persist   |     2.1 |
-| cereal    |     3.1 |
-| binary    |     9.0 |
-| serialise |    27.1 |
+| persist   |     1.4 |
+| cereal    |     3.0 |
+| binary    |    16.4 |
+| serialise |    44.4 |
 
 #### serialization (time)/Iris (best first)
 
 | package | performance |
 | ---| ---|
 | **store**     |     **1.0** |
-| persist   |     3.8 |
-| cereal    |     4.8 |
-| serialise |    21.4 |
-| binary    |    37.2 |
+| persist   |     1.4 |
+| cereal    |     2.8 |
+| serialise |    25.7 |
+| binary    |    29.8 |
 
 #### serialization (time)/[Direction] (best first)
 
 | package | performance |
 | ---| ---|
-| **store**     |     **1.0** |
-| persist   |     2.0 |
-| cereal    |     2.6 |
-| binary    |     2.9 |
-| serialise |     7.7 |
+| **persist**   |     **1.0** |
+| **store**     |     **1.2** |
+| cereal    |     3.7 |
+| binary    |     4.7 |
+| serialise |    14.4 |
