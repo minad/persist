@@ -4,22 +4,28 @@
 [![Build Status](https://secure.travis-ci.org/minad/persist.png?branch=master)](http://travis-ci.org/minad/persist)
 
 persist is a reasonably fast binary serialization library operating on strict ByteStrings with small dependency footprint.
-The binary format uses the little endian representation on both big- and little endian machines.
+The default binary format uses the little endian representation on both big and little endian machines.
 The API design is mostly compatible with the cereal library. However the binary format
 is not compatible with binary and cereal. Its internal machinery for deserialization is based on the `store` library.
 Serialization generates ByteStrings directly instead of relying on the ByteString Builder.
 
+The interface is rich enough to allow for a `Perist` instance to match an
+externally specified serialization format. 1.0.0.0 Has helper functions that
+make this easier.
+
 ## Comparison with other libraries
 
-* flat - bit packing (!), fast, longer compile times
-* store - faster serialization, machine dependent, larger library, many dependencies
+* store - faster serialization, machine dependent, larger library, many dependencies. Difficult to use for external formats.
 * cereal - similar to persist, slower
 * binary - lazy and slower than persist
+
+`persist` consistently has faster deserialization performance. There is likely
+more that can be done to improve the `Generic` driven default serialization.
 
 ## Benchmarks
 
 Benchmarks are available at https://github.com/haskell-perf/serialization.
-The following serialization and deserialization results were measured on GHC 8.6.2.
+The following serialization and deserialization results were measured on GHC 9.12.2
 Results that are within 30% of the best result are displayed in **bold**.
 
 #### deserialization (time)/BinTree Direction (best first)
@@ -28,116 +34,96 @@ Results that are within 30% of the best result are displayed in **bold**.
 | ---| ---|
 | **persist**   |     **1.0** |
 | **store**     |     **1.1** |
-| **flat**      |     **1.2** |
-| cereal    |     4.3 |
-| serialise |     6.1 |
-| binary    |     7.8 |
-| packman   |    13.5 |
+| **cereal**    |     **1.2** |
+| binary    |     7.2 |
+| serialise |     8.4 |
 
 #### deserialization (time)/BinTree Int (best first)
 
 | package | performance |
 | ---| ---|
+| **persist**   |     **1.0** |
 | **store**     |     **1.0** |
-| **persist**   |     **1.1** |
-| **cereal**    |     **1.3** |
-| flat      |     1.3 |
-| serialise |     4.1 |
-| binary    |     4.8 |
-| packman   |    15.0 |
+| **cereal**    |     **1.2** |
+| binary    |     4.3 |
+| serialise |     5.0 |
 
 #### deserialization (time)/Cars (best first)
 
 | package | performance |
 | ---| ---|
 | **persist**   |     **1.0** |
-| **store**     |     **1.1** |
-| flat      |     1.3 |
-| cereal    |     2.9 |
-| packman   |     3.7 |
-| serialise |     4.8 |
-| binary    |     7.2 |
+| **store**     |     **1.3** |
+| cereal    |     1.6 |
+| binary    |     8.0 |
+| serialise |     9.9 |
 
 #### deserialization (time)/Iris (best first)
 
 | package | performance |
 | ---| ---|
-| **store**     |     **1.0** |
-| **persist**   |     **1.1** |
-| **flat**      |     **1.2** |
-| serialise |     2.4 |
-| cereal    |     3.6 |
-| packman   |     3.6 |
-| binary    |     8.5 |
+| **persist**   |     **1.0** |
+| **store**     |     **1.2** |
+| cereal    |     3.0 |
+| serialise |     3.5 |
+| binary    |     7.6 |
 
 #### deserialization (time)/[Direction] (best first)
 
 | package | performance |
 | ---| ---|
 | **persist**   |     **1.0** |
-| **flat**      |     **1.1** |
-| **store**     |     **1.2** |
-| **cereal**    |     **1.3** |
-| serialise |     3.0 |
-| binary    |     3.1 |
-| packman   |    11.0 |
+| cereal    |     1.3 |
+| store     |     1.5 |
+| binary    |     4.4 |
+| serialise |     6.9 |
 
 #### serialization (time)/BinTree Direction (best first)
 
 | package | performance |
 | ---| ---|
-| **store**     |     **1.0** |
-| **persist**   |     **1.1** |
-| flat      |     1.4 |
-| cereal    |     8.4 |
-| binary    |    16.0 |
-| serialise |    22.0 |
-| packman   |    38.4 |
+| **persist**   |     **1.0** |
+| **store**     |     **1.1** |
+| cereal    |     8.2 |
+| binary    |    16.1 |
+| serialise |    26.4 |
 
 #### serialization (time)/BinTree Int (best first)
 
 | package | performance |
 | ---| ---|
 | **store**     |     **1.0** |
-| **flat**      |     **1.0** |
-| persist   |     1.7 |
-| cereal    |    14.1 |
-| binary    |    18.7 |
-| serialise |    20.6 |
-| packman   |    54.4 |
+| **persist**   |     **1.0** |
+| cereal    |    10.7 |
+| binary    |    18.3 |
+| serialise |    25.3 |
 
 #### serialization (time)/Cars (best first)
 
 | package | performance |
 | ---| ---|
 | **store**     |     **1.0** |
-| flat      |     2.1 |
-| persist   |     3.6 |
-| cereal    |     5.7 |
-| binary    |    11.2 |
-| serialise |    13.7 |
-| packman   |    15.6 |
+| persist   |     2.1 |
+| cereal    |     3.1 |
+| binary    |     9.0 |
+| serialise |    27.1 |
 
 #### serialization (time)/Iris (best first)
 
 | package | performance |
 | ---| ---|
 | **store**     |     **1.0** |
-| flat      |     5.0 |
-| persist   |     6.4 |
-| serialise |    12.5 |
-| cereal    |    15.0 |
-| packman   |    36.0 |
-| binary    |    80.0 |
+| persist   |     3.8 |
+| cereal    |     4.8 |
+| serialise |    21.4 |
+| binary    |    37.2 |
 
 #### serialization (time)/[Direction] (best first)
 
 | package | performance |
 | ---| ---|
 | **store**     |     **1.0** |
-| **persist**   |     **1.1** |
-| flat      |     1.4 |
-| cereal    |     3.8 |
-| binary    |     5.2 |
-| serialise |     7.8 |
-| packman   |    45.0 |
+| persist   |     2.0 |
+| cereal    |     2.6 |
+| binary    |     2.9 |
+| serialise |     7.7 |

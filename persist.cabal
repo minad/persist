@@ -1,71 +1,82 @@
-name:                   persist
-version:                0.1.1.5
-license:                BSD3
-license-file:           LICENSE
-author:                 Daniel Mendler <mail@daniel-mendler.de>,
-                        Michael Sloan <sloan@fpcomplete.com>,
-                        FP Complete,
-                        Lennart Kolmodin <kolmodin@dtek.chalmers.se>,
-                        Galois Inc.,
-                        Lemmih <lemmih@gmail.com>,
-                        Bas van Dijk <v.dijk.bas@gmail.com>
-maintainer:             Daniel Mendler <mail@daniel-mendler.de>
-category:               Data, Parsing
-stability:              provisional
-build-type:             Simple
-cabal-version:          >= 1.10
-synopsis:               Minimal serialization library with focus on performance
-homepage:               https://github.com/minad/persist
-tested-with:            GHC == 8.4.4, GHC == 8.6.4
+cabal-version: 3.6
+name: persist
+version: 1.0.0.0
+license: BSD-3-Clause
+license-file: LICENSE
+author:
+  Daniel Mendler <mail@daniel-mendler.de>,
+  Michael Sloan <sloan@fpcomplete.com>,
+  FP Complete,
+  Lennart Kolmodin <kolmodin@dtek.chalmers.se>,
+  Galois Inc.,
+  Lemmih <lemmih@gmail.com>,
+  Bas van Dijk <v.dijk.bas@gmail.com>,
+  Kyle Butt <kyle@iteratee.net>
+
+maintainer: Kyle Butt <kyle@iteratee.net>
+category: Data, Parsing
+stability: provisional
+build-type: Simple
+synopsis: Minimal serialization library with focus on performance
+homepage: https://github.com/minad/persist
+tested-with:
+  ghc ==9.2.8
+  ghc ==9.4.8
+  ghc ==9.6.7
+  ghc ==9.8.4
+  ghc ==9.10.2
+  ghc ==9.12.2
 
 description:
   A binary serialization library with focus on performance similar to store and cereal
 
 source-repository head
-  type:     git
-  location: git://github.com/minad/persist
+  type: git
+  location: https://github.com/minad/persist
 
 flag force-unaligned
-        manual: True
-        default: False
+  manual: True
+  default: False
+
 flag force-aligned
-        manual: True
-        default: False
+  manual: True
+  default: False
 
 library
-        default-language:       Haskell2010
+  default-language: Haskell2010
+  build-depends:
+    base >=4.16 && <5,
+    bytestring >=0.11.1 && <1,
+    containers,
+    text >=1.2.5 && <2.2,
 
-        build-depends:          base >= 4.7 && < 5, containers,
-                                bytestring >= 0.10.4 && < 1,
-                                text >= 1.2 && < 1.3
+  if !flag(force-aligned) && (flag(force-unaligned) || arch(i386) || arch(x86_64))
+    cpp-options: -DUNALIGNED_MEMORY
+  hs-source-dirs: src
+  exposed-modules:
+    Data.Persist
+    Data.Persist.Internal
 
-        if !flag(force-aligned) && (flag(force-unaligned) || arch(i386) || arch(x86_64))
-                cpp-options: -DUNALIGNED_MEMORY
-
-        hs-source-dirs:         src
-
-        exposed-modules:        Data.Persist,
-                                Data.Persist.Internal
-
-        ghc-options:            -Wall -O2 -funbox-strict-fields
-
-
+  ghc-options:
+    -Wall
+    -O2
+    -funbox-strict-fields
 
 test-suite test-persist
-        default-language:       Haskell2010
+  default-language: Haskell2010
+  type: exitcode-stdio-1.0
+  build-depends:
+    QuickCheck,
+    base >=4.16 && <5,
+    bytestring >=0.11.1,
+    persist,
+    test-framework,
+    test-framework-quickcheck2,
+    text >=1.2.5 && <2.2,
 
-        type:                   exitcode-stdio-1.0
+  main-is: Main.hs
+  other-modules:
+    GetTests
+    RoundTrip
 
-        build-depends:          base == 4.*,
-                                bytestring >= 0.9,
-                                QuickCheck,
-                                test-framework,
-                                test-framework-quickcheck2,
-                                persist,
-                                text >= 1.2 && < 1.3
-
-        main-is:                Main.hs
-        other-modules:          RoundTrip
-                                GetTests
-
-        hs-source-dirs:         tests
+  hs-source-dirs: tests
