@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -39,6 +40,7 @@ module Data.Persist
 
     -- * Serialization
   , encode
+  , encodeLazy
   , decode
 
     -- * The Get type
@@ -58,7 +60,9 @@ module Data.Persist
     -- * The Put type
   , Put
   , runPut
+  , runPutLazy
   , evalPut
+  , evalPutLazy
   , grow
   , putByteString
   , putHE
@@ -71,6 +75,8 @@ module Data.Persist
   , resolveSizeExclusiveLE
   , resolveSizeInclusiveBE
   , resolveSizeInclusiveLE
+  , resolveSizeLE
+  , resolveSizeBE
   ) where
 
 import Control.Exception (throw)
@@ -81,7 +87,7 @@ import Data.IORef (readIORef)
 import Data.Int (Int16, Int32, Int64, Int8)
 import Data.IntMap (IntMap)
 import Data.IntSet (IntSet)
-import Data.Kind (Type)
+import Data.Kind (Constraint, Type)
 import Data.List (unfoldr)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
@@ -109,7 +115,17 @@ import GHC.Base (ord, unsafeChr)
 import GHC.Exts (IsList (..))
 import GHC.Generics
 import GHC.Real (Ratio (..))
-import GHC.TypeLits (KnownNat, Nat, Natural, natVal, type (+), type (<=))
+import GHC.TypeLits
+  ( ErrorMessage (..)
+  , KnownNat
+  , Nat
+  , Natural
+  , Symbol
+  , TypeError
+  , natVal
+  , type (+)
+  , type (<=?)
+  )
 
 #include "MachDeps.h"
 
@@ -379,6 +395,11 @@ class Persist t where
 -- | Encode a value using binary serialization to a strict ByteString.
 encode :: (Persist a) => a -> ByteString
 encode = runPut . put
+
+-- | Encode a value using binary serialization to a lazy ByteString.
+encodeLazy :: (Persist a) => a -> L.ByteString
+encodeLazy = runPutLazy . put
+
 
 {- | Decode a value from a strict ByteString, reconstructing the original
 structure.
@@ -867,8 +888,11 @@ instance (Persist a) => Persist (M.Last a)
 -}
 instance (Persist a) => Persist [a] where
   put l = do
-    put $ length l
-    mapM_ put l
+    sizeHandle <- reserveSize @Word64
+    go sizeHandle 0 l
+   where
+    go sizeHandle !n [] = resolveSizeLE sizeHandle n
+    go sizeHandle !n (x : rest) = put x >> go sizeHandle (n + 1) rest
   {-# INLINE put #-}
 
   get = go [] =<< get @Word64
@@ -1008,15 +1032,26 @@ instance (GPersistGet a, GPersistGet b) => GPersistGet (a :*: b) where
   gget = (:*:) <$!> gget <*> gget
   {-# INLINE gget #-}
 
-instance (SumArity (a :+: b) <= 255, GPersistPutSum 0 (a :+: b)) => GPersistPut (a :+: b) where
+instance (FitsInByte (SumArity (a :+: b)), GPersistPutSum 0 (a :+: b)) => GPersistPut (a :+: b) where
   gput x = gputSum x (Proxy :: Proxy 0)
   {-# INLINE gput #-}
 
-instance (SumArity (a :+: b) <= 255, GPersistGetSum 0 (a :+: b)) => GPersistGet (a :+: b) where
+instance (FitsInByte (SumArity (a :+: b)), GPersistGetSum 0 (a :+: b)) => GPersistGet (a :+: b) where
   gget = do
     tag <- get
     ggetSum tag (Proxy :: Proxy 0)
   {-# INLINE gget #-}
+
+type FitsInByte n = FitsInByteResult (n <=? 255)
+
+type family FitsInByteResult (b :: Bool) :: Constraint where
+  FitsInByteResult 'True = ()
+  FitsInByteResult 'False =
+    TypeErrorMessage
+      "Generic deriving of Persist instances can only be used on datatypes with fewer than 256 constructors."
+
+type family TypeErrorMessage (a :: Symbol) :: Constraint where
+  TypeErrorMessage a = TypeError ('Text a)
 
 class (KnownNat n) => GPersistPutSum (n :: Nat) (f :: Type -> Type) where
   gputSum :: f p -> Proxy n -> Put ()
@@ -1115,6 +1150,10 @@ runPut :: Put a -> ByteString
 runPut = snd . evalPut
 {-# INLINE runPut #-}
 
+runPutLazy :: Put a -> L.ByteString
+runPutLazy = snd . evalPutLazy
+{-# INLINE runPutLazy #-}
+
 putByteString :: ByteString -> Put ()
 putByteString bs = do
   grow (B.length bs)
@@ -1162,6 +1201,11 @@ resolveSizeInclusive putter PutSize {..} = Put $ \e p -> do
   _ <- (putter writeSize).unPut e sizePtr
   pure $ p :!: ()
 
+resolveSize :: forall a. (Integral a, HasEndianness a) => (a -> Put ()) -> PutSize a -> a -> Put ()
+resolveSize putter PutSize {..} manualSize = Put $ \e p -> do
+  _ <- (putter manualSize).unPut e sizePtr
+  pure $ p :!: ()
+
 computeSize ::
   forall a.
   (Integral a, HasEndianness a) =>
@@ -1195,3 +1239,9 @@ resolveSizeInclusiveBE = resolveSizeInclusive unsafePutBE
 
 resolveSizeInclusiveLE :: (Integral a, HasEndianness a) => PutSize a -> Put ()
 resolveSizeInclusiveLE = resolveSizeInclusive unsafePutLE
+
+resolveSizeLE :: (Integral a, HasEndianness a) => PutSize a -> a -> Put()
+resolveSizeLE = resolveSize unsafePutLE
+
+resolveSizeBE :: (Integral a, HasEndianness a) => PutSize a -> a -> Put()
+resolveSizeBE = resolveSize unsafePutBE

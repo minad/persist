@@ -18,6 +18,7 @@ module RoundTrip where
 
 import qualified Data.ByteString as BS (length)
 import qualified Data.ByteString.Char8 as B8 (unpack)
+import qualified Data.ByteString.Lazy as LBS (toStrict)
 import Data.Int
 import Data.Persist
 import Data.Text (Text)
@@ -30,9 +31,10 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 import Test.QuickCheck as QC
 
 roundTrip :: (Persist a, Eq a) => (a -> Put ()) -> Get a -> a -> Bool
-roundTrip p g a = res == Right a
+roundTrip p g a = res == Right a && lazyRes == Right a
  where
   res = runGet (g <* eof) (runPut (p a))
+  lazyRes = runGet (g <* eof) (LBS.toStrict (runPutLazy (p a)))
 
 roundTripLengthInclusiveLE ::
   forall a l.
