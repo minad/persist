@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -81,7 +82,7 @@ import Data.IORef (readIORef)
 import Data.Int (Int16, Int32, Int64, Int8)
 import Data.IntMap (IntMap)
 import Data.IntSet (IntSet)
-import Data.Kind (Type)
+import Data.Kind (Constraint, Type)
 import Data.List (unfoldr)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
@@ -109,7 +110,17 @@ import GHC.Base (ord, unsafeChr)
 import GHC.Exts (IsList (..))
 import GHC.Generics
 import GHC.Real (Ratio (..))
-import GHC.TypeLits (KnownNat, Nat, Natural, natVal, type (+), type (<=))
+import GHC.TypeLits
+  ( ErrorMessage (..)
+  , KnownNat
+  , Nat
+  , Natural
+  , Symbol
+  , TypeError
+  , natVal
+  , type (+)
+  , type (<=?)
+  )
 
 #include "MachDeps.h"
 
@@ -1008,15 +1019,26 @@ instance (GPersistGet a, GPersistGet b) => GPersistGet (a :*: b) where
   gget = (:*:) <$!> gget <*> gget
   {-# INLINE gget #-}
 
-instance (SumArity (a :+: b) <= 255, GPersistPutSum 0 (a :+: b)) => GPersistPut (a :+: b) where
+instance (FitsInByte (SumArity (a :+: b)), GPersistPutSum 0 (a :+: b)) => GPersistPut (a :+: b) where
   gput x = gputSum x (Proxy :: Proxy 0)
   {-# INLINE gput #-}
 
-instance (SumArity (a :+: b) <= 255, GPersistGetSum 0 (a :+: b)) => GPersistGet (a :+: b) where
+instance (FitsInByte (SumArity (a :+: b)), GPersistGetSum 0 (a :+: b)) => GPersistGet (a :+: b) where
   gget = do
     tag <- get
     ggetSum tag (Proxy :: Proxy 0)
   {-# INLINE gget #-}
+
+type FitsInByte n = FitsInByteResult (n <=? 255)
+
+type family FitsInByteResult (b :: Bool) :: Constraint where
+  FitsInByteResult 'True = ()
+  FitsInByteResult 'False =
+    TypeErrorMessage
+      "Generic deriving of Persist instances can only be used on datatypes with fewer than 256 constructors."
+
+type family TypeErrorMessage (a :: Symbol) :: Constraint where
+  TypeErrorMessage a = TypeError ('Text a)
 
 class (KnownNat n) => GPersistPutSum (n :: Nat) (f :: Type -> Type) where
   gputSum :: f p -> Proxy n -> Put ()
