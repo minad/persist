@@ -40,6 +40,7 @@ module Data.Persist
 
     -- * Serialization
   , encode
+  , encodeLazy
   , decode
 
     -- * The Get type
@@ -59,7 +60,9 @@ module Data.Persist
     -- * The Put type
   , Put
   , runPut
+  , runPutLazy
   , evalPut
+  , evalPutLazy
   , grow
   , putByteString
   , putHE
@@ -390,6 +393,11 @@ class Persist t where
 -- | Encode a value using binary serialization to a strict ByteString.
 encode :: (Persist a) => a -> ByteString
 encode = runPut . put
+
+-- | Encode a value using binary serialization to a lazy ByteString.
+encodeLazy :: (Persist a) => a -> L.ByteString
+encodeLazy = runPutLazy . put
+
 
 {- | Decode a value from a strict ByteString, reconstructing the original
 structure.
@@ -1136,6 +1144,10 @@ getPrefix prefixLength baseGet = do
 runPut :: Put a -> ByteString
 runPut = snd . evalPut
 {-# INLINE runPut #-}
+
+runPutLazy :: Put a -> L.ByteString
+runPutLazy = snd . evalPutLazy
+{-# INLINE runPutLazy #-}
 
 putByteString :: ByteString -> Put ()
 putByteString bs = do

@@ -35,7 +35,9 @@ module Data.Persist.Internal
   , PutException (..)
   , Chunk (..)
   , evalPut
-  , evalPutIO
+  , evalPutStrictIO
+  , evalPutLazy
+  , evalPutLazyIO
   , grow
 
     -- * Size reservations
@@ -46,7 +48,9 @@ import Control.Exception
 import Control.Monad
 import qualified Control.Monad.Fail as Fail
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as B
 import qualified Data.ByteString.Internal as B
+import qualified Data.ByteString.Lazy.Internal as BL
 #if MIN_VERSION_base(4,20,0)
 import Data.Foldable (foldlM)
 #else
@@ -59,10 +63,13 @@ import Foreign
   ( ForeignPtr
   , Ptr
   , allocaBytes
+  , finalizerFree
   , free
   , mallocBytes
   , minusPtr
+  , newForeignPtr
   , plusPtr
+  , reallocBytes
   , withForeignPtr
   )
 import Foreign.Marshal.Utils (copyBytes)
@@ -268,20 +275,63 @@ catChunks chks = B.create (chunksLength chks) $ \p ->
     $ reverse chks
 {-# INLINE catChunks #-}
 
-evalPutIO :: Put a -> IO (a, ByteString)
-evalPutIO p = do
+evalPutIO :: Put a -> (a -> NonEmpty Chunk -> IO (a, b)) -> IO (a, b)
+evalPutIO p chunkConsumer = do
   k <- newChunk 0
   chunks <- newIORef (k :| [])
   curEnd <- newIORef k.end
   p' :!: r <- allocaBytes 8 $ \tmp ->
     p.unPut PutEnv {chunks, end = curEnd, tmp} k.begin
   cs <- readIORef chunks
-  s <- case cs of
-    (x :| xs) ->
+  case cs of
+    (x :| xs) -> do
       let !x' = (\Chunk {..} -> Chunk {end = p', ..}) x
-       in catChunks $ x' : xs
-  pure (r, s)
+      chunkConsumer r (x' :| xs)
+{-# INLINE evalPutIO #-}
+
+evalPutStrictIO :: Put a -> IO (a, ByteString)
+evalPutStrictIO p = evalPutIO p chunkHandler
+ where
+  chunkHandler r cs = do
+    s <- case cs of
+      (x :| []) -> singleChunk x
+      (x :| xs) -> catChunks (x : xs)
+    pure (r, s)
+  singleChunk Chunk {..} = do
+    case end `minusPtr` begin of
+      0 -> do
+        free begin
+        pure B.empty
+      newSize -> do
+        newPtr <- reallocBytes begin newSize
+        foreignNewPtr <- newForeignPtr finalizerFree newPtr
+        pure $ B.BS foreignNewPtr newSize
+{-# INLINE evalPutStrictIO #-}
+
+evalPutLazyIO :: Put a -> IO (a, BL.ByteString)
+evalPutLazyIO p = evalPutIO p chunkHandler
+ where
+  chunkHandler r cs = do
+    s <- case cs of
+      (x :| xs) -> foldlM makeLBSChunk BL.Empty (x : xs)
+    pure (r, s)
+  makeLBSChunk :: BL.ByteString -> Chunk -> IO BL.ByteString
+  makeLBSChunk lbsTail Chunk {..} = do
+    case end `minusPtr` begin of
+      0 -> do
+        free begin
+        pure lbsTail
+      newSize -> do
+        newPtr <- reallocBytes begin newSize
+        foreignNewPtr <- newForeignPtr finalizerFree newPtr
+        let strictChunk = B.BS foreignNewPtr newSize
+        pure $ BL.Chunk strictChunk lbsTail
+{-# INLINE evalPutLazyIO #-}
 
 evalPut :: Put a -> (a, ByteString)
-evalPut p = unsafePerformIO $ evalPutIO p
+evalPut p = unsafePerformIO $ evalPutStrictIO p
 {-# NOINLINE evalPut #-}
+
+evalPutLazy :: Put a -> (a, BL.ByteString)
+evalPutLazy p = unsafePerformIO $ evalPutLazyIO p
+{-# NOINLINE evalPutLazy #-}
