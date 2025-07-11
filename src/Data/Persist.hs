@@ -75,6 +75,8 @@ module Data.Persist
   , resolveSizeExclusiveLE
   , resolveSizeInclusiveBE
   , resolveSizeInclusiveLE
+  , resolveSizeLE
+  , resolveSizeBE
   ) where
 
 import Control.Exception (throw)
@@ -886,8 +888,11 @@ instance (Persist a) => Persist (M.Last a)
 -}
 instance (Persist a) => Persist [a] where
   put l = do
-    put $ length l
-    mapM_ put l
+    sizeHandle <- reserveSize @Word64
+    go sizeHandle 0 l
+   where
+    go sizeHandle !n [] = resolveSizeLE sizeHandle n
+    go sizeHandle !n (x : rest) = put x >> go sizeHandle (n + 1) rest
   {-# INLINE put #-}
 
   get = go [] =<< get @Word64
@@ -1196,6 +1201,11 @@ resolveSizeInclusive putter PutSize {..} = Put $ \e p -> do
   _ <- (putter writeSize).unPut e sizePtr
   pure $ p :!: ()
 
+resolveSize :: forall a. (Integral a, HasEndianness a) => (a -> Put ()) -> PutSize a -> a -> Put ()
+resolveSize putter PutSize {..} manualSize = Put $ \e p -> do
+  _ <- (putter manualSize).unPut e sizePtr
+  pure $ p :!: ()
+
 computeSize ::
   forall a.
   (Integral a, HasEndianness a) =>
@@ -1229,3 +1239,9 @@ resolveSizeInclusiveBE = resolveSizeInclusive unsafePutBE
 
 resolveSizeInclusiveLE :: (Integral a, HasEndianness a) => PutSize a -> Put ()
 resolveSizeInclusiveLE = resolveSizeInclusive unsafePutLE
+
+resolveSizeLE :: (Integral a, HasEndianness a) => PutSize a -> a -> Put()
+resolveSizeLE = resolveSize unsafePutLE
+
+resolveSizeBE :: (Integral a, HasEndianness a) => PutSize a -> a -> Put()
+resolveSizeBE = resolveSize unsafePutBE
