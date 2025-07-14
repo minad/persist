@@ -28,7 +28,8 @@ tested-with:
   ghc ==9.12.2
 
 description:
-  A binary serialization library with focus on performance similar to store and cereal
+  A binary serialization library with focus on performance similar to store and
+  cereal. Includes utilities to match externally specified data formats.
 
 source-repository head
   type: git
