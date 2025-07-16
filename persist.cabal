@@ -60,7 +60,6 @@ library
 
   ghc-options:
     -Wall
-    -O2
     -funbox-strict-fields
 
 test-suite test-persist
