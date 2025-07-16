@@ -26,6 +26,7 @@ tested-with:
   ghc ==9.8.4
   ghc ==9.10.2
   ghc ==9.12.2
+extra-doc-files: Changelog.md
 
 description:
   A binary serialization library with focus on performance similar to store and
